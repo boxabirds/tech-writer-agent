@@ -1,0 +1,14 @@
+[project]
+name = "tech-writer-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=0.3.20",
+    "langchain-openai>=0.3.9",
+    "langgraph>=0.3.14",
+    "ollama>=0.4.7",
+    "openai>=1.66.3",
+    "python-dotenv>=1.0.1",
+]
