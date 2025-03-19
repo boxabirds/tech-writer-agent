@@ -1,0 +1,13 @@
+Analyze this codebase and provide a comprehensive overview of its structure, purpose, and key components. 
+
+Please include:
+1. A high-level summary of what the project does
+2. The main technologies and frameworks used
+3. Key directories and their purposes
+4. Important files and their roles
+5. Main functions or classes and their responsibilities
+6. Any notable patterns or architectural decisions
+7. Dependencies and external libraries
+8. Potential areas for improvement or technical debt
+
+Format your response as a well-structured Markdown document with appropriate headings, lists, and code references.

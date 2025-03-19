@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 import json
 import re
 import ast
-from datetime import datetime
+import datetime
 import mimetypes
 import pathspec
 import os
@@ -11,9 +11,7 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 import argparse
-
-# Create the model
-model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+from binaryornot.check import is_binary
 
 # Define all tools
 @tool
@@ -373,7 +371,7 @@ def get_file_info(file_path: str) -> str:
             "file": str(path),
             "size_bytes": stat_info.st_size,
             "size_human": f"{stat_info.st_size / 1024:.2f} KB" if stat_info.st_size < 1024 * 1024 else f"{stat_info.st_size / (1024 * 1024):.2f} MB",
-            "modification_time": datetime.fromtimestamp(stat_info.st_mtime).isoformat(),
+            "modification_time": datetime.datetime.fromtimestamp(stat_info.st_mtime).isoformat(),
             "extension": path.suffix.lower(),
             "is_binary": is_binary_file(file_path),
             "is_hidden": path.name.startswith('.')
@@ -414,48 +412,8 @@ def find_function_calls(file_path: str, function_name: str) -> str:
 
 # Helper function for binary file detection
 def is_binary_file(file_path: str) -> bool:
-    """Check if a file is binary."""
-    # Get the file extension
-    ext = os.path.splitext(file_path)[1].lower()
-    
-    # List of extensions that are always text files regardless of MIME type
-    text_extensions = ['.json', '.md', '.txt', '.csv', '.tsv', '.yml', '.yaml', '.xml', '.html', '.css', '.js', '.ts', '.tsx', '.jsx']
-    if ext in text_extensions:
-        try:
-            # Still try to read it to make sure it's valid text
-            with open(file_path, 'r', encoding='utf-8') as f:
-                f.read(1024)
-            return False
-        except UnicodeDecodeError:
-            # If we can't decode it as UTF-8, it might still be binary
-            pass
-    
-    # Check MIME type
-    mime, _ = mimetypes.guess_type(file_path)
-    
-    # List of MIME types that are text-based but don't start with 'text/'
-    text_mimes = [
-        'application/json',
-        'application/javascript',
-        'application/xml',
-        'application/xhtml+xml',
-        'application/x-yaml',
-        'application/x-typescript'
-    ]
-    
-    if mime:
-        if mime.startswith('text/'):
-            return False
-        if mime in text_mimes:
-            return False
-    
-    # As a last resort, try to read the file
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            f.read(1024)  # Try to read a chunk of the file
-        return False
-    except UnicodeDecodeError:
-        return True
+    """Check if a file is binary using binaryornot library."""
+    return is_binary(file_path)
 
 def get_gitignore_spec(directory_path: str) -> pathspec.PathSpec:
     """
@@ -590,15 +548,15 @@ def find_files(directory: str, pattern: str = "*", respect_gitignore: bool = Tru
 # Collect all tools
 tools = [
     list_files,
-    read_file,
-    search_in_files,
-    analyze_imports,
-    find_functions,
-    find_classes,
+    find_files,
     count_lines_of_code,
+    analyze_imports,
+    find_classes,
+    find_functions,
+    find_function_calls,
     find_todos,
-    get_file_info,
-    find_function_calls
+    read_file,
+    get_file_info
 ]
 
 # Custom system prompt
@@ -625,9 +583,6 @@ When analyzing code:
 - Summarize your findings to help someone understand the codebase quickly, tailored to the prompt.
 """
 
-
-# Create the agent
-
 def read_prompt_file(file_path: str) -> str:
     """Read a prompt from an external file."""
     try:
@@ -645,7 +600,7 @@ def read_prompt_file(file_path: str) -> str:
     except Exception as e:
         raise Exception(f"Error reading prompt file: {str(e)}")
 
-def analyze_codebase(directory_path: str, prompt_file_path: str) -> str:
+def analyze_codebase(directory_path: str, prompt_file_path: str, model: ChatOpenAI) -> str:
     """Analyze a codebase using the ReAct agent with a prompt from an external file."""
     try:
         directory = Path(directory_path).resolve()
@@ -658,6 +613,21 @@ def analyze_codebase(directory_path: str, prompt_file_path: str) -> str:
             "role": "user",
             "content": f"Base directory: {directory}\n\n{prompt}"
         }
+        
+        # Define the tools to use
+        tools = [
+            list_files,
+            find_files,
+            count_lines_of_code,
+            analyze_imports,
+            find_classes,
+            find_functions,
+            find_function_calls,
+            find_todos,
+            read_file,
+            get_file_info
+        ]
+        
         agent = create_react_agent(
             prompt=system_prompt + "\n\n" + prompt,
             model=model,
@@ -679,10 +649,34 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze a codebase using a LangGraph ReAct agent")
     parser.add_argument("--directory", required=True, help="Path to the codebase directory")
     parser.add_argument("--prompt-file", required=True, help="Path to the file containing the analysis prompt")
+    parser.add_argument("--model", default="gpt-4o-mini", help="Model name used for analysis")
     
     try:
         args = parser.parse_args()
-        analysis_result = analyze_codebase(args.directory, args.prompt_file)
+        
+        # Create the model
+        model = ChatOpenAI(model=args.model, temperature=0)
+        
+        # Run the analysis
+        analysis_result = analyze_codebase(args.directory, args.prompt_file, model)
+        
+        # Create output directory if it doesn't exist
+        output_dir = Path("output")
+        output_dir.mkdir(exist_ok=True)
+        
+        # Generate timestamp for filename
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        model_name = args.model
+        output_filename = f"{timestamp}-{model_name}.md"
+        output_path = output_dir / output_filename
+        
+        # Save results to markdown file
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(analysis_result)
+        
+        print(f"Analysis complete. Results saved to {output_path}")
+        
+        # Also print to console
         print(analysis_result)
     except Exception as e:
         print(f"Error: {str(e)}")
