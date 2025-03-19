@@ -1,0 +1,129 @@
+Create a comprehensive and detailed knowledge checkpoint for the codebase. Your analysis should be thorough and include specific code examples, file references, and technical details wherever possible. Include ONLY sections and subsections where you have concrete evidence from the code:
+
+1. **Codebase Overview and Purpose** (500+ words)
+   - Detailed description of what the application does
+   - Core functionality and features
+   - Target users and use cases
+   - Key technologies, frameworks, and libraries used (with versions if available)
+   - Overall code organization and architecture philosophy
+
+2. **Technical Architecture Analysis** (1000+ words)
+   - Detailed breakdown of the directory structure and organization
+   - Analysis of the frontend architecture (components, state management, routing)
+   - Analysis of the backend architecture (API design, controllers, services)
+   - Database schema and data models
+   - Authentication and authorization mechanisms
+   - External integrations and third-party services
+   - Build system, bundling, and deployment configuration
+
+3. **User Experience and Workflow Analysis** (800+ words)
+   - Detailed user journey maps for primary use cases
+   - Analysis of UI components and design patterns
+   - Form handling and validation approaches
+   - Error handling and user feedback mechanisms
+   - Accessibility considerations
+   - Performance optimizations for user experience
+   - Mobile responsiveness strategy
+
+4. **Mermaid Diagrams** (CRITICAL - MUST INCLUDE ALL OF THESE)
+   - **Software Architecture Diagram**: Show all major components, services, and their interactions
+   - **Data Flow Diagram**: Illustrate how data moves through the system
+   - **Deployment Architecture Diagram**: Show infrastructure components and deployment strategy
+   - **CI/CD Pipeline Diagram**: Detail the build, test, and deployment process
+   - **Entity Relationship Diagram**: Show all data models and their relationships
+   - **Component Hierarchy Diagram**: For frontend applications, show the component structure
+
+5. **Code Quality and Patterns** (600+ words)
+   - Analysis of coding standards and conventions used
+   - Design patterns identified in the codebase
+   - State management approach
+   - Error handling and logging strategies
+   - Testing approach and coverage
+   - Code reuse and modularity assessment
+   - Technical debt identification
+
+6. **API and Interface Analysis** (500+ words)
+   - Documentation of all API endpoints with request/response examples
+   - Authentication and authorization for APIs
+   - Error handling and status codes
+   - API versioning strategy
+   - Internal interfaces between components/services
+
+7. **Performance and Scalability** (400+ words)
+   - Identified performance bottlenecks
+   - Caching strategies
+   - Database query optimization
+   - Load handling and scaling approaches
+   - Resource utilization
+
+8. **Security Assessment** (600+ words)
+   - Authentication and authorization mechanisms
+   - Input validation and sanitization
+   - Protection against common vulnerabilities (XSS, CSRF, SQL Injection, etc.)
+   - Sensitive data handling
+   - Dependency security analysis
+   - Compliance considerations (GDPR, HIPAA, etc. if applicable)
+
+9. **Deployment and DevOps** (400+ words)
+   - Environment configuration
+   - Containerization and orchestration
+   - Infrastructure as code
+   - Monitoring and logging
+   - Backup and disaster recovery
+
+10. **Documentation and Maintainability** (300+ words)
+    - Quality of inline documentation
+    - External documentation
+    - Onboarding new developers
+    - Knowledge sharing mechanisms
+
+11. **Unexpected Observations and Anomalies** (400+ words)
+    - Unusual patterns or approaches
+    - Inconsistencies in the codebase
+    - Potential bugs or issues
+    - Abandoned or deprecated code
+
+12. **Recommendations and Next Steps** (500+ words)
+    - Prioritized list of improvements
+    - Refactoring opportunities
+    - Feature enhancement suggestions
+    - Technical debt remediation plan
+    - Scaling and performance optimization suggestions
+
+IMPORTANT GUIDELINES:
+
+1. ONLY INCLUDE SECTIONS AND SUBSECTIONS WHERE YOU HAVE CONCRETE EVIDENCE. If you don't have evidence for a specific subsection, DO NOT INCLUDE IT AT ALL. Do not create placeholder entries or mention that information is missing.
+
+2. For each section you include, provide specific code examples, file paths, and concrete details. Reference actual components, functions, and classes from the codebase.
+
+3. ZERO SPECULATION POLICY: Do not include any statements that speculate about what "might be" or "could be" implemented. This includes phrases like:
+   - "Not explicitly visible, but likely involves X"
+   - "Could be implemented using Y"
+   - "Probably uses Z"
+   - "Might be handled by W"
+   
+   Instead:
+   - If you find concrete evidence in the code, describe it with file paths and line references
+   - If you don't find evidence, DO NOT include that subsection at all
+
+4. ALL MERMAID DIAGRAMS ARE REQUIRED. Create detailed diagrams based ONLY on the actual code structure you can verify, not on speculation. If certain aspects of the system are not clear from the code, simplify the diagrams to show only what you can confirm from the code.
+
+5. Focus on depth rather than breadth. It's better to provide detailed analysis of the parts of the codebase that are well-understood than to make vague statements about areas that aren't clear.
+
+6. Include actual code snippets (with file paths) to illustrate important patterns, architecture decisions, or potential issues.
+
+7. For each technology or framework identified, provide specific evidence from the code that confirms its use (e.g., import statements, configuration files, etc.).
+
+8. NEVER use phrases like:
+   - "likely", "probably", "possibly", "could be", "might be"
+   - "No explicit X is mentioned in the files listed" 
+   - "No X found in the codebase"
+   - "Not Explicitly Detailed"
+   - "No specific X mentioned"
+   - Any other phrasing that indicates lack of information
+
+9. DO NOT include empty sections or subsections with placeholder text. If a major section has no concrete information, omit it entirely. The only exception is the "Recommendations" section, where you can suggest implementing missing features.
+
+10. For the "Recommendations and Next Steps" section, you may include suggestions for implementing missing features or components, but frame them clearly as recommendations, not as descriptions of what might already exist.
+
+11. IMPORTANT: Review your final output and remove ANY bullet points or sections that contain phrases like "Not Explicitly Detailed" or similar statements indicating lack of information.
