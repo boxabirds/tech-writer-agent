@@ -1,0 +1,11 @@
+Create a knowledge checkpoint for the code base containing the following content:
+
+1. A one paragraph statement of what the codebase actually does
+2. A one page narrative explaining the user experience including all use cases
+3. Mermaid architecture diagram showing the overall software architecture
+4. Mermaid deployment architecture diagram
+5. Mermaid CI/CD diagram showing how changes are propagated and tested
+6. Mermaid class diagrams showing all entities, properties, and their relationships
+7. Unexpected observations about the codebase
+8. Security audit assessing risks against common patterns and antipatterns
+
