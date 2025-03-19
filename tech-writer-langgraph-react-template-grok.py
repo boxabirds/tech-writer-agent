@@ -6,6 +6,7 @@ import ast
 from datetime import datetime
 import mimetypes
 import pathspec
+import os
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
@@ -19,13 +20,14 @@ model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 def list_files(path: str = ".", max_depth: Optional[int] = None) -> str:
     """List all files and directories in the specified path up to a maximum depth."""
     try:
-        path = Path(path).resolve()
-        if not path.exists():
+        path_obj = Path(path).resolve()
+        if not path_obj.exists():
             return json.dumps({"error": f"Path not found: {path}"}, indent=2)
         
         # Define common patterns to ignore (similar to .gitignore)
         ignore_patterns = [
             "node_modules/",
+            "node_modules",
             ".git/",
             "__pycache__/",
             "*.pyc",
@@ -44,59 +46,112 @@ def list_files(path: str = ".", max_depth: Optional[int] = None) -> str:
         ]
         
         # Check if .gitignore exists and add its patterns
-        gitignore_path = path / ".gitignore"
+        gitignore_path = path_obj / ".gitignore"
         if gitignore_path.exists():
             try:
                 with open(gitignore_path, 'r') as f:
-                    ignore_patterns.extend(line.strip() for line in f if line.strip() and not line.startswith('#'))
-            except Exception:
-                pass  # If we can't read .gitignore, just use the default patterns
+                    gitignore_content = f.readlines()
+                    for line in gitignore_content:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            ignore_patterns.append(line)
+                print(f"Added {len(gitignore_content)} patterns from .gitignore")
+            except Exception as e:
+                print(f"Error reading .gitignore: {e}")
         
         # Create pathspec matcher
         spec = pathspec.PathSpec.from_lines(
             pathspec.patterns.GitWildMatchPattern, ignore_patterns
         )
         
-        files, directories = [], []
+        files = []
+        directories = []
+        skipped_dirs = []
+        skipped_files = []
         
-        # Function to check if a path should be ignored
-        def should_ignore(item_path):
-            rel_to_base = str(item_path.relative_to(path))
-            return spec.match_file(rel_to_base)
+        # Helper function to check if a path should be ignored
+        def should_ignore(rel_path, is_dir=False):
+            # Normalize path with forward slashes for consistent matching
+            norm_path = rel_path.replace(os.sep, '/')
+            
+            # Explicit check for node_modules
+            if "node_modules" in norm_path:
+                return True
+                
+            # For directories, check both with and without trailing slash
+            if is_dir:
+                with_slash = norm_path if norm_path.endswith('/') else f"{norm_path}/"
+                return spec.match_file(norm_path) or spec.match_file(with_slash)
+            else:
+                return spec.match_file(norm_path)
         
-        # Use different approaches based on max_depth
-        if max_depth is None:
-            # For recursive search, we'll manually walk to respect ignore patterns
-            for root, dirs, filenames in path.walk():
-                root_path = Path(root)
+        # Walk the directory tree
+        for root, dirs, filenames in os.walk(str(path_obj)):
+            # Get the path relative to the base path for proper matching
+            rel_root = os.path.relpath(root, str(path_obj))
+            rel_root = "" if rel_root == "." else rel_root
+            
+            # Filter directories in-place to avoid recursing into ignored directories
+            i = 0
+            while i < len(dirs):
+                # Create the relative path for matching
+                if rel_root:
+                    rel_dir_path = f"{rel_root}/{dirs[i]}"
+                else:
+                    rel_dir_path = dirs[i]
                 
-                # Filter out ignored directories to avoid walking into them
-                dirs[:] = [d for d in dirs if not should_ignore(root_path / d)]
+                # Check if directory should be ignored
+                if should_ignore(rel_dir_path, is_dir=True):
+                    skipped_dir = dirs.pop(i)  # Remove from list to prevent recursion
+                    skipped_dirs.append(rel_dir_path)
+                    print(f"Skipping directory: {rel_dir_path}")
+                else:
+                    i += 1
+            
+            # Check if we've reached max depth
+            if max_depth is not None:
+                depth = 0 if rel_root == "" else rel_root.count(os.sep) + 1
+                if depth >= max_depth:
+                    dirs.clear()  # Clear dirs to prevent further recursion
+            
+            # Process files
+            for filename in filenames:
+                # Create the relative path for matching
+                if rel_root:
+                    rel_file_path = f"{rel_root}/{filename}"
+                else:
+                    rel_file_path = filename
                 
-                for filename in filenames:
-                    file_path = root_path / filename
-                    if not should_ignore(file_path):
-                        files.append(str(file_path.relative_to(path)))
+                # Check if file should be ignored
+                if should_ignore(rel_file_path):
+                    skipped_files.append(rel_file_path)
+                else:
+                    files.append(rel_file_path)
+            
+            # Add directories to the result
+            for dir_name in dirs:
+                if rel_root:
+                    rel_dir_path = f"{rel_root}/{dir_name}"
+                else:
+                    rel_dir_path = dir_name
                 
-                for dirname in dirs:
-                    dir_path = root_path / dirname
-                    directories.append(str(dir_path.relative_to(path)))
-        else:
-            # For limited depth search
-            pattern = "*/" * max_depth + "*"
-            for item in path.glob(pattern):
-                if not should_ignore(item):
-                    rel_path = str(item.relative_to(path))
-                    if item.is_file():
-                        files.append(rel_path)
-                    elif item.is_dir():
-                        directories.append(rel_path)
+                directories.append(rel_dir_path)
+        
+        # Final safety check - ensure no node_modules files or directories slipped through
+        files = [f for f in files if "node_modules" not in f]
+        directories = [d for d in directories if "node_modules" not in d]
         
         result = {
             "files": files,
             "directories": directories,
-            "current_path": str(path)
+            "current_path": str(path_obj),
+            "skipped_directories_count": len(skipped_dirs),
+            "skipped_files_count": len(skipped_files)
         }
+        
+        print(f"Found {len(files)} files and {len(directories)} directories")
+        print(f"Skipped {len(skipped_dirs)} directories and {len(skipped_files)} files")
+        
         return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"error": f"Error listing files: {str(e)}"}, indent=2)
@@ -258,7 +313,8 @@ def count_lines_of_code(directory: str = ".", file_pattern: str = "*") -> str:
         directory = Path(directory).resolve()
         total_lines, file_count, file_stats = 0, 0, {}
         
-        for filepath in directory.rglob(file_pattern):
+        # Use the find_files function to respect .gitignore
+        for filepath in find_files(str(directory), pattern=file_pattern):
             if filepath.is_file() and not is_binary_file(str(filepath)):
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
@@ -288,14 +344,15 @@ def find_todos(directory: str = ".", file_pattern: str = "*") -> str:
         todo_pattern = r'(?://|#|/\*|\*|<!--)\s*TODO:?\s*(.*?)(?:\*/|-->|\n|$)'
         directory = Path(directory).resolve()
         
-        for filepath in directory.rglob(file_pattern):
+        # Use the find_files function to respect .gitignore
+        for filepath in find_files(str(directory), pattern=file_pattern):
             if filepath.is_file() and not is_binary_file(str(filepath)):
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
                         content = f.read()
                         matches = re.findall(todo_pattern, content)
                         if matches:
-                            todos[str(filepath.relative_to(directory))] = [match[1].strip() for match in matches if match[1].strip()]
+                            todos[str(filepath.relative_to(directory))] = matches
                 except Exception:
                     continue
         
@@ -358,11 +415,177 @@ def find_function_calls(file_path: str, function_name: str) -> str:
 # Helper function for binary file detection
 def is_binary_file(file_path: str) -> bool:
     """Check if a file is binary."""
+    # Get the file extension
+    ext = os.path.splitext(file_path)[1].lower()
+    
+    # List of extensions that are always text files regardless of MIME type
+    text_extensions = ['.json', '.md', '.txt', '.csv', '.tsv', '.yml', '.yaml', '.xml', '.html', '.css', '.js', '.ts', '.tsx', '.jsx']
+    if ext in text_extensions:
+        try:
+            # Still try to read it to make sure it's valid text
+            with open(file_path, 'r', encoding='utf-8') as f:
+                f.read(1024)
+            return False
+        except UnicodeDecodeError:
+            # If we can't decode it as UTF-8, it might still be binary
+            pass
+    
+    # Check MIME type
+    mime, _ = mimetypes.guess_type(file_path)
+    
+    # List of MIME types that are text-based but don't start with 'text/'
+    text_mimes = [
+        'application/json',
+        'application/javascript',
+        'application/xml',
+        'application/xhtml+xml',
+        'application/x-yaml',
+        'application/x-typescript'
+    ]
+    
+    if mime:
+        if mime.startswith('text/'):
+            return False
+        if mime in text_mimes:
+            return False
+    
+    # As a last resort, try to read the file
     try:
-        with open(file_path, 'rb') as f:
-            return b'\0' in f.read(1024)
-    except Exception:
-        return True  # Treat unreadable files as binary
+        with open(file_path, 'r', encoding='utf-8') as f:
+            f.read(1024)  # Try to read a chunk of the file
+        return False
+    except UnicodeDecodeError:
+        return True
+
+def get_gitignore_spec(directory_path: str) -> pathspec.PathSpec:
+    """
+    Create a PathSpec object from .gitignore patterns in the specified directory.
+    
+    Args:
+        directory_path: Path to the directory containing .gitignore
+        
+    Returns:
+        PathSpec object for matching against .gitignore patterns
+    """
+    path_obj = Path(directory_path).resolve()
+    
+    # Define common patterns to ignore (similar to .gitignore)
+    ignore_patterns = [
+        "node_modules/",
+        "node_modules",
+        ".git/",
+        "__pycache__/",
+        "*.pyc",
+        "*.pyo",
+        "*.pyd",
+        ".DS_Store",
+        "dist/",
+        "build/",
+        "*.egg-info/",
+        "venv/",
+        ".env/",
+        ".venv/",
+        "env/",
+        ".idea/",
+        ".vscode/"
+    ]
+    
+    # Check if .gitignore exists and add its patterns
+    gitignore_path = path_obj / ".gitignore"
+    if gitignore_path.exists():
+        try:
+            with open(gitignore_path, 'r') as f:
+                gitignore_content = f.readlines()
+                for line in gitignore_content:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        ignore_patterns.append(line)
+            print(f"Added {len(gitignore_content)} patterns from .gitignore")
+        except Exception as e:
+            print(f"Error reading .gitignore: {e}")
+    
+    # Create pathspec matcher
+    return pathspec.PathSpec.from_lines(
+        pathspec.patterns.GitWildMatchPattern, ignore_patterns
+    )
+
+def should_ignore_path(path: str, base_dir: str, spec: pathspec.PathSpec, is_dir: bool = False) -> bool:
+    """
+    Check if a path should be ignored based on .gitignore patterns.
+    
+    Args:
+        path: Absolute path to check
+        base_dir: Base directory for creating relative path
+        spec: PathSpec object with patterns
+        is_dir: Whether the path is a directory
+        
+    Returns:
+        True if the path should be ignored, False otherwise
+    """
+    # Get path relative to base directory
+    try:
+        rel_path = os.path.relpath(path, base_dir)
+        # Normalize path with forward slashes for consistent matching
+        norm_path = rel_path.replace(os.sep, '/')
+    except ValueError:
+        # If paths are on different drives, don't ignore
+        return False
+    
+    # Explicit check for node_modules
+    if "node_modules" in norm_path:
+        return True
+        
+    # For directories, check both with and without trailing slash
+    if is_dir:
+        with_slash = norm_path if norm_path.endswith('/') else f"{norm_path}/"
+        return spec.match_file(norm_path) or spec.match_file(with_slash)
+    else:
+        return spec.match_file(norm_path)
+
+def find_files(directory: str, pattern: str = "*", respect_gitignore: bool = True) -> List[Path]:
+    """
+    Find files matching a pattern while respecting .gitignore.
+    
+    Args:
+        directory: Directory to search in
+        pattern: File pattern to match (glob format)
+        respect_gitignore: Whether to respect .gitignore patterns
+        
+    Returns:
+        List of Path objects for matching files
+    """
+    directory_path = Path(directory).resolve()
+    
+    if not respect_gitignore:
+        return list(directory_path.rglob(pattern))
+    
+    # Get gitignore spec
+    spec = get_gitignore_spec(str(directory_path))
+    matching_files = []
+    
+    # Walk the directory tree
+    for root, dirs, files in os.walk(str(directory_path)):
+        # Filter directories in-place to avoid recursing into ignored directories
+        i = 0
+        while i < len(dirs):
+            dir_path = os.path.join(root, dirs[i])
+            if should_ignore_path(dir_path, str(directory_path), spec, is_dir=True):
+                dirs.pop(i)  # Remove from list to prevent recursion
+            else:
+                i += 1
+        
+        # Filter files based on pattern and gitignore
+        for file in files:
+            file_path = os.path.join(root, file)
+            # Check if file matches pattern
+            if not Path(file).match(pattern) and not Path(file_path).match(pattern):
+                continue
+                
+            # Check if file should be ignored
+            if not should_ignore_path(file_path, str(directory_path), spec):
+                matching_files.append(Path(file_path))
+    
+    return matching_files
 
 # Collect all tools
 tools = [

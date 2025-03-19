@@ -1,0 +1,146 @@
+{
+  "included_dirs": [
+    "migrations",
+    "server",
+    "public",
+    "db",
+    "doc",
+    "client",
+    "migrations/meta",
+    "server/handlers",
+    "client/src",
+    "client/src/components",
+    "client/src/hooks",
+    "client/src/lib",
+    "client/src/workers",
+    "client/src/pages"
+  ],
+  "excluded_dirs": [
+    "node_modules",
+    ".git",
+    "public/uploads"
+  ],
+  "excluded_dirs_reasons": [
+    {
+      "path": "node_modules",
+      "reason": "explicit node_modules check"
+    },
+    {
+      "path": ".git",
+      "reason": "matched pattern with slash: .git/"
+    },
+    {
+      "path": "public/uploads",
+      "reason": "matched pattern with slash: public/uploads/"
+    }
+  ],
+  "included_files": [
+    "theme.json",
+    "generated-icon.png",
+    "250318-160431-checkpoint.md",
+    ".windsurfrules",
+    "tailwind.config.ts",
+    ".replit",
+    ".gitignore",
+    "250318-164022-checkpoint.md",
+    "package-lock.json",
+    "package.json",
+    "250318-163733-checkpoint.md",
+    "250318-155045-checkpoint.md",
+    "tsconfig.json",
+    "drizzle.config.ts",
+    "vite.config.ts",
+    "postcss.config.js",
+    "install-dev-mac.sh",
+    "migrations/schema.ts",
+    "migrations/0000_warm_blue_marvel.sql",
+    "migrations/relations.ts",
+    "migrations/meta/0000_snapshot.json",
+    "migrations/meta/_journal.json",
+    "server/vite.ts",
+    "server/routes.ts",
+    "server/index.ts",
+    "server/handlers/websites.ts",
+    "server/handlers/landscapes.ts",
+    "server/handlers/enrich.ts",
+    "db/schema.ts",
+    "db/types.ts",
+    "db/index.ts",
+    "doc/250318-checkpoint-webworker-custom-hook.md",
+    "client/index.html",
+    "client/src/App.tsx",
+    "client/src/main.tsx",
+    "client/src/index.css"
+  ],
+  "excluded_files": [
+    ".DS_Store",
+    ".env",
+    "server/.DS_Store",
+    "public/.DS_Store",
+    "client/.DS_Store"
+  ],
+  "excluded_files_reasons": [
+    {
+      "path": ".DS_Store",
+      "reason": "matched file pattern"
+    },
+    {
+      "path": ".env",
+      "reason": "matched file pattern"
+    },
+    {
+      "path": "server/.DS_Store",
+      "reason": "matched file pattern"
+    },
+    {
+      "path": "public/.DS_Store",
+      "reason": "matched file pattern"
+    },
+    {
+      "path": "client/.DS_Store",
+      "reason": "matched file pattern"
+    }
+  ],
+  "patterns": [
+    "node_modules/",
+    "node_modules",
+    ".git/",
+    "__pycache__/",
+    "*.pyc",
+    "*.pyo",
+    "*.pyd",
+    ".DS_Store",
+    "dist/",
+    "build/",
+    "*.egg-info/",
+    "venv/",
+    ".env/",
+    ".venv/",
+    "env/",
+    ".idea/",
+    ".vscode/",
+    "node_modules",
+    "dist",
+    ".DS_Store",
+    "server/public",
+    "vite.config.ts.*",
+    "*.tar.gz",
+    "public/uploads/**",
+    ".env"
+  ],
+  "gitignore_patterns": [
+    "node_modules",
+    "dist",
+    ".DS_Store",
+    "server/public",
+    "vite.config.ts.*",
+    "*.tar.gz",
+    "public/uploads/**",
+    ".env"
+  ],
+  "execution_stats": {
+    "dirs_traversed": 15,
+    "files_checked": 58,
+    "execution_time": 0.0022568702697753906
+  }
+}
