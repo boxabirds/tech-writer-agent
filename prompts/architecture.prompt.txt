@@ -1,0 +1,64 @@
+# Comprehensive Architecture Analysis
+
+Analyze this codebase from an architect's perspective and create a detailed architectural overview document. Focus on providing valuable insights rather than exhaustive listings. Include Mermaid diagrams where appropriate to visualize relationships.
+
+## Required Analysis Areas
+
+1. **High-Level Architecture**
+   - Identify the architectural pattern(s) used (e.g., MVC, microservices, event-driven)
+   - Create a Mermaid component diagram showing major system components and their relationships
+   - Describe the key design principles evident in the codebase
+
+2. **Component Structure**
+   - Identify core components/modules and their responsibilities
+   - Create a Mermaid class diagram for the most important classes/components
+   - Analyze dependencies between components (highlight circular dependencies if present)
+
+3. **Data Flow**
+   - Create a Mermaid sequence diagram showing the main data flow through the system
+   - Identify key data structures and their transformations
+   - Document any API contracts (internal or external)
+
+4. **State Management**
+   - Identify how state is managed throughout the application
+   - Create a Mermaid state diagram for any complex state machines
+   - Document any global state patterns (e.g., Redux, context, singletons)
+
+5. **Error Handling & Resilience**
+   - Analyze the error handling strategy
+   - Identify any resilience patterns (retries, circuit breakers, etc.)
+   - Document exception hierarchies if present
+
+6. **Security Model**
+   - Identify authentication and authorization mechanisms
+   - Document any encryption or data protection approaches
+   - Highlight potential security concerns in the architecture
+
+7. **Performance Considerations**
+   - Identify any caching mechanisms
+   - Document concurrency/parallelism approaches
+   - Note any performance optimizations in the architecture
+
+8. **Testing Strategy**
+   - Analyze the testing approach (unit, integration, e2e)
+   - Document test coverage and quality
+   - Identify any test automation patterns
+
+9. **Deployment Architecture**
+   - Document the deployment model (if discernible from code)
+   - Create a Mermaid deployment diagram if applicable
+   - Identify CI/CD patterns if present
+
+10. **Technology Stack**
+    - List the key technologies, frameworks, and libraries used
+    - Note version constraints or compatibility issues
+    - Identify any deprecated or outdated dependencies
+
+## Output Format Guidelines
+
+- Begin with an executive summary (max 3 paragraphs)
+- For areas with insufficient information, briefly note this and move on (avoid lengthy explanations of what's missing)
+- Use Mermaid diagrams liberally to visualize architecture (at least 3-4 diagrams)
+- Include a "Key Architectural Decisions" section highlighting important design choices
+- End with a "Recommendations" section for architectural improvements
+- Use markdown formatting for readability

@@ -1,17 +1,38 @@
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import json
 import re
 import ast
 import datetime
 import mimetypes
 import pathspec
+from pathspec.patterns import GitWildMatchPattern
 import os
 import argparse
 from binaryornot.check import is_binary
 import openai
+from openai import OpenAI
 import math
 import fnmatch
+
+# Check for API keys
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+# Define model providers
+GEMINI_MODELS = ["gemini-2.0-flash", "gemini-2.0-pro"]
+OPENAI_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"]
+
+# Warn if neither API key is set
+if not GEMINI_API_KEY and not OPENAI_API_KEY:
+    print("Warning: Neither GEMINI_API_KEY nor OPENAI_API_KEY environment variables are set.")
+    print("Please set at least one of these environment variables to use the respective API.")
+    print("You can get a Gemini API key from https://aistudio.google.com")
+    print("You can get an OpenAI API key from https://platform.openai.com")
+elif not GEMINI_API_KEY:
+    print("Note: GEMINI_API_KEY environment variable is not set. Only OpenAI models will be available.")
+elif not OPENAI_API_KEY:
+    print("Note: OPENAI_API_KEY environment variable is not set. Only Gemini models will be available.")
 
 # Helper function for binary file detection
 def is_binary_file(file_path: str) -> bool:
@@ -23,45 +44,32 @@ def get_gitignore_spec(directory: str) -> pathspec.PathSpec:
     Get a PathSpec object from .gitignore in the specified directory.
     
     Args:
-        directory: Directory to look for .gitignore
+        directory: The directory containing .gitignore
         
     Returns:
-        PathSpec object with patterns from .gitignore
+        A PathSpec object for matching against .gitignore patterns
     """
-    # Define common patterns to ignore (similar to .gitignore)
-    # we do these because we should skip them anyway, they're just going to cause problems
-    ignore_patterns = [
-        "node_modules/",
-        ".git/",
-        "__pycache__/",
-        "*.pyc",
-        "*.pyo",
-        "*.pyd",
-        ".DS_Store",
-        "*.egg-info/",
-        ".idea/",
-        ".vscode/"
-    ]
+    ignore_patterns = []
     
-    # Check if .gitignore exists and add its patterns
+    # Try to read .gitignore file
     gitignore_path = Path(directory) / ".gitignore"
     if gitignore_path.exists():
         try:
-            with open(gitignore_path, 'r') as f:
-                gitignore_content = f.readlines()
-                for line in gitignore_content:
+            with open(gitignore_path, "r", encoding="utf-8") as f:
+                for line in f:
                     line = line.strip()
-                    if line and not line.startswith('#'):
+                    # Skip empty lines and comments
+                    if line and not line.startswith("#"):
                         ignore_patterns.append(line)
-            print(f"Added {len(gitignore_content)} patterns from .gitignore")
+                        
+            print(f"Added {len(ignore_patterns)} patterns from .gitignore")
         except Exception as e:
             print(f"Error reading .gitignore: {e}")
     
     # Create pathspec matcher
     return pathspec.PathSpec.from_lines(
-        pathspec.patterns.GitWildMatchPattern, ignore_patterns
+        GitWildMatchPattern, ignore_patterns
     )
-
 
 def read_prompt_file(file_path: str) -> str:
     """Read a prompt from an external file."""
@@ -82,7 +90,7 @@ def read_prompt_file(file_path: str) -> str:
 
 # System prompt components for the tech writer agent
 ROLE_AND_TASK = """
-You are a code analysis expert that helps developers understand codebases. 
+You are an expert tech writer that helps teams understand codebases with accurate and concise supporting analysis and documentation. 
 Your task is to analyse the local filesystem to understand the structure and functionality of a codebase.
 """
 
@@ -104,8 +112,7 @@ Important guidelines:
 - Adapt your analysis approach based on the codebase and the prompt's requirements.
 - Be thorough but focus on the most important aspects as specified in the prompt.
 - Provide clear, structured summaries of your findings in your final response.
-- Use language-specific parsing for Python (.py) and JavaScript (.js) files where applicable (e.g., for analysing imports, functions, or classes).
-- Handle errors gracefully and report them clearly if they occur.
+- Handle errors gracefully and report them clearly if they occur but don't let them halt the rest of the analysis.
 """
 
 CODE_ANALYSIS_STRATEGIES = """
@@ -269,15 +276,42 @@ TOOLS = {
     "calculate": calculate
 }
 
+class PathEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Path):
+            return str(obj)
+        return super().default(obj)
+
 class ReActAgent:
-    def __init__(self, model_name="gpt-4o-mini"):
-        """Initialise the ReAct agent with the specified model."""
+    def __init__(self, model_name="gemini-2.0-flash", base_url="https://generativelanguage.googleapis.com/v1beta/openai/"):
+        """Initialize the ReAct agent with the specified model and API configuration."""
         self.model_name = model_name
         self.temperature = 0  # Always use temperature 0 for deterministic results
         self.memory = []
         self.final_answer = None
         
-        # Format tools for OpenAI API
+        # Determine which API to use based on the model name
+        self.is_gemini_model = model_name in GEMINI_MODELS
+        self.is_openai_model = model_name in OPENAI_MODELS
+        
+        # Check if we have the appropriate API key
+        if self.is_gemini_model and not GEMINI_API_KEY:
+            raise ValueError(f"Model '{model_name}' requires GEMINI_API_KEY to be set")
+        if self.is_openai_model and not OPENAI_API_KEY:
+            raise ValueError(f"Model '{model_name}' requires OPENAI_API_KEY to be set")
+        
+        # Initialize the appropriate client
+        if self.is_gemini_model:
+            self.client = OpenAI(
+                api_key=GEMINI_API_KEY,
+                base_url=base_url
+            )
+        else:  # OpenAI model
+            self.client = OpenAI(
+                api_key=OPENAI_API_KEY
+            )
+        
+        # Format tools for API
         self.openai_tools = self.create_openai_tool_definitions(TOOLS)
     
     def create_openai_tool_definitions(self, tools_dict):
@@ -289,8 +323,14 @@ class ReActAgent:
         
         Returns:
             List of tool definitions in the format required by OpenAI's API
+
+        This is substantially inspired by the langgraph @tool decorator
+        
+        Raises:
+            TypeError: If a parameter type cannot be mapped to an OpenAI tool parameter type
         """
         import inspect
+        from typing import get_origin, get_args
         openai_tools = []
         
         for name, func in tools_dict.items():
@@ -300,26 +340,64 @@ class ReActAgent:
             required = []
             
             for param_name, param in sig.parameters.items():
-                param_type = "string"  # Default type
-                if param.annotation == int:
+                # Skip 'self' parameter for class methods
+                if param_name == 'self':
+                    continue
+                    
+                # Determine parameter type
+                param_type = None
+                param_info = {}
+                
+                # Handle basic types
+                if param.annotation == str or param.annotation == inspect.Parameter.empty:
+                    param_type = "string"
+                elif param.annotation == int:
                     param_type = "integer"
+                elif param.annotation == float:
+                    param_type = "number"
                 elif param.annotation == bool:
                     param_type = "boolean"
-                elif param.annotation == List[str]:
+                # Handle List types
+                elif get_origin(param.annotation) == list:
                     param_type = "array"
+                    item_type = get_args(param.annotation)[0] if get_args(param.annotation) else None
+                    
+                    if item_type == str:
+                        param_info["items"] = {"type": "string"}
+                    elif item_type == int:
+                        param_info["items"] = {"type": "integer"}
+                    elif item_type == float:
+                        param_info["items"] = {"type": "number"}
+                    elif item_type == bool:
+                        param_info["items"] = {"type": "boolean"}
+                    else:
+                        raise TypeError(f"Unsupported array item type {item_type} for parameter '{param_name}' in function '{name}'")
+                # Handle Dict types
+                elif get_origin(param.annotation) == dict:
+                    param_type = "object"
+                else:
+                    # Unsupported type
+                    raise TypeError(f"Unsupported parameter type {param.annotation} for parameter '{param_name}' in function '{name}'")
                 
-                param_info = {"type": param_type}
-                if param_type == "array":
-                    param_info["items"] = {"type": "string"}
+                param_info["type"] = param_type
                 
                 # Add description from docstring if available
                 if func.__doc__:
-                    param_info["description"] = f"Parameter for {name}"
+                    # Try to extract parameter description from docstring
+                    docstring_lines = func.__doc__.split('\n')
+                    param_desc = None
+                    for line in docstring_lines:
+                        line = line.strip()
+                        if line.startswith(f"{param_name}:"):
+                            param_desc = line[len(param_name) + 1:].strip()
+                            break
+                    
+                    param_info["description"] = param_desc or f"Parameter for {name}"
                 
                 parameters[param_name] = param_info
                 
                 # Check if parameter is required
-                if param.default == inspect.Parameter.empty and param_name != 'self':
+                if param.default == inspect.Parameter.empty:
                     required.append(param_name)
             
             # Create the tool definition
@@ -327,7 +405,7 @@ class ReActAgent:
                 "type": "function",
                 "function": {
                     "name": name,
-                    "description": func.__doc__ or f"Function {name}",
+                    "description": func.__doc__.split('\n')[0] if func.__doc__ else f"Function {name}",
                     "parameters": {
                         "type": "object",
                         "properties": parameters,
@@ -338,7 +416,7 @@ class ReActAgent:
             openai_tools.append(tool_def)
         
         return openai_tools
-
+    
     def initialise_memory(self, prompt, directory):
         """Initialise the agent's memory with the prompt and directory."""
         self.memory = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -348,7 +426,10 @@ class ReActAgent:
     def call_llm(self):
         """Call the LLM with the current memory and tools."""
         try:
-            response = openai.chat.completions.create(
+            # Call the appropriate API
+            api_type = "Gemini" if self.is_gemini_model else "OpenAI"
+            
+            response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=self.memory,
                 tools=self.openai_tools,
@@ -356,7 +437,7 @@ class ReActAgent:
             )
             return response.choices[0].message
         except Exception as e:
-            print(f"Error calling OpenAI API: {e}")
+            print(f"Error calling {api_type} API: {e}")
             # Return a simple error message in the expected format
             return {"content": f"Error: {str(e)}", "tool_calls": None}
     
@@ -375,8 +456,8 @@ class ReActAgent:
                     return "final_answer", final_answer_match.group(1).strip()
             return "final_answer", assistant_message.content
         
-        # Otherwise, it's a tool call
-        return "tool_call", assistant_message.tool_calls[0]
+        # Otherwise, it's one or more tool calls
+        return "tool_calls", assistant_message.tool_calls
     
     def execute_tool(self, tool_call):
         """Execute the requested tool and return the observation."""
@@ -393,6 +474,18 @@ class ReActAgent:
             # Execute the tool
             print(f"Executing tool: {tool_name} with args: {args}")
             result = TOOLS[tool_name](**args)
+            
+            # Format the response based on the tool and result type
+            if tool_name == "find_all_matching_files":
+                # Convert Path objects to strings and return a formatted response
+                if isinstance(result, list):
+                    file_paths = [str(path) for path in result]
+                    return f"Found {len(file_paths)} files matching the pattern:\n" + "\n".join(file_paths)
+            
+            # For other tools, use the custom JSON encoder to handle Path objects
+            if isinstance(result, list) or isinstance(result, dict):
+                result = json.loads(json.dumps(result, cls=PathEncoder))
+            
             return result
         except json.JSONDecodeError:
             return f"Error: Invalid JSON in tool arguments: {tool_call.function.arguments}"
@@ -416,17 +509,19 @@ class ReActAgent:
             if result_type == "final_answer":
                 self.final_answer = result_data
                 break
-            elif result_type == "tool_call":
-                # Execute the tool
-                observation = self.execute_tool(result_data)
-                
-                # Add the observation to memory
-                self.memory.append({
-                    "role": "tool",
-                    "tool_call_id": result_data.id,
-                    "name": result_data.function.name,
-                    "content": observation
-                })
+            elif result_type == "tool_calls":
+                # Execute each tool call
+                for tool_call in result_data:
+                    # Execute the tool
+                    observation = self.execute_tool(tool_call)
+                    
+                    # Add the observation to memory
+                    self.memory.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "content": observation
+                    })
             
             print(f"Memory length: {len(self.memory)} messages")
         
@@ -445,11 +540,15 @@ def get_command_line_args():
     parser = argparse.ArgumentParser(description="Analyse a codebase using a ReAct agent")
     parser.add_argument("--directory", required=True, help="Path to the codebase directory")
     parser.add_argument("--prompt-file", required=True, help="Path to the file containing the analysis prompt")
-    parser.add_argument("--model", default="gpt-4o-mini", help="Model name used for analysis")
+    parser.add_argument("--model", default="gemini-2.0-flash", 
+                        choices=GEMINI_MODELS + OPENAI_MODELS,
+                        help="Model name used for analysis")
+    parser.add_argument("--base-url", default="https://generativelanguage.googleapis.com/v1beta/openai/", 
+                        help="Base URL for the Gemini API OpenAI compatibility endpoint (only used for Gemini models)")
     
     return parser.parse_args()
 
-def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str) -> str:
+def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str, base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/") -> str:
     """Analyse a codebase using the ReAct agent with a prompt from an external file."""
     try:
         directory = Path(directory_path).resolve()
@@ -460,7 +559,7 @@ def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str
         prompt = read_prompt_file(prompt_file_path)
         
         # Create and run the agent
-        agent = ReActAgent(model_name=model_name)
+        agent = ReActAgent(model_name=model_name, base_url=base_url)
         result = agent.run(prompt, directory)
         
         return result
@@ -499,7 +598,7 @@ def main():
 
     try:
         args = get_command_line_args()
-        analysis_result = analyse_codebase(args.directory, args.prompt_file, args.model)
+        analysis_result = analyse_codebase(args.directory, args.prompt_file, args.model, args.base_url)
         save_results(analysis_result, args.model)
 
     except Exception as e:

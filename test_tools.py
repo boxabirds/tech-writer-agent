@@ -9,6 +9,7 @@ import pytest
 from pathlib import Path
 import tempfile
 import shutil
+import unittest.mock
 
 # Import the tools directly from the script
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -18,8 +19,11 @@ spec = importlib.util.spec_from_file_location(
     "tech_writer_script", 
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "tech-writer-from-scratch.py")
 )
-tech_writer_script = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(tech_writer_script)
+
+# Mock the environment variable for testing
+with unittest.mock.patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}):
+    tech_writer_script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tech_writer_script)
 
 # Get the functions from the imported module
 find_all_matching_files = tech_writer_script.find_all_matching_files
@@ -185,6 +189,25 @@ class TestCalculate:
         # Test an expression with a security risk
         result = calculate("__import__('os').system('ls')")
         assert "error" in result
+
+
+class TestReActAgent:
+    """Tests for the ReActAgent class."""
+    
+    def test_init_with_default_base_url(self):
+        """Test initialization with default base URL."""
+        with unittest.mock.patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}):
+            agent = tech_writer_script.ReActAgent(model_name="gemini-2.0-flash")
+            assert agent.model_name == "gemini-2.0-flash"
+            assert agent.client.base_url == "https://generativelanguage.googleapis.com/v1beta/openai/"
+    
+    def test_init_with_custom_base_url(self):
+        """Test initialization with custom base URL."""
+        custom_url = "https://custom-api-endpoint.example.com/v1/"
+        with unittest.mock.patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}):
+            agent = tech_writer_script.ReActAgent(model_name="gemini-2.0-flash", base_url=custom_url)
+            assert agent.model_name == "gemini-2.0-flash"
+            assert agent.client.base_url == custom_url
 
 
 if __name__ == "__main__":
