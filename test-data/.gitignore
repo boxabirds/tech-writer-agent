@@ -1,0 +1,16 @@
+# Ignore compiled files
+*.o
+*.pyc
+__pycache__/
+
+# Ignore build directories
+build/
+dist/
+
+# Ignore generated files
+generated_files/
+*.log
+
+# Ignore specific files
+secret_config.json
+credentials.txt

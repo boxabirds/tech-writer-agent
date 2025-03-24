@@ -1,0 +1,8 @@
+{
+  "api_key": "this_is_a_fake_api_key_for_testing",
+  "environment": "development",
+  "debug": true,
+  "log_level": "verbose",
+  "max_retries": 3,
+  "timeout": 30
+}

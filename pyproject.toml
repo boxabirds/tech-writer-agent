@@ -12,4 +12,19 @@ dependencies = [
     "ollama>=0.4.7",
     "openai>=1.66.3",
     "python-dotenv>=1.0.1",
+    "pathspec==0.11.2",
+    "binaryornot==0.4.4"
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==7.4.0",
+    "pytest-cov==4.1.0",
+    "black==23.7.0",
+    "flake8==6.1.0",
+    "mypy==1.5.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test_tools.py"]
+python_files = "test_*.py"
