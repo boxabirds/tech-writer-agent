@@ -14,6 +14,9 @@ import openai
 from openai import OpenAI
 import math
 import fnmatch
+import inspect
+import typing
+from typing import get_origin, get_args
 
 # Check for API keys
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -125,12 +128,21 @@ When analysing code:
 - Summarise your findings to help someone understand the codebase quickly, tailored to the prompt.
 """
 
-PLANNING_STRATEGY = """
+REACT_PLANNING_STRATEGY = """
 You should follow the ReAct pattern:
 1. Thought: Reason about what you need to do next
 2. Action: Use one of the available tools
 3. Observation: Review the results of the tool
 4. Repeat until you have enough information to provide a final answer
+"""
+
+REFLEXION_PLANNING_STRATEGY = """
+You should follow the Reflexion pattern (an extension of ReAct):
+1. Thought: Reason about what you need to do next
+2. Action: Use one of the available tools
+3. Observation: Review the results of the tool
+4. Reflection: Analyze your approach, identify any mistakes or inefficiencies, and consider how to improve
+5. Repeat until you have enough information to provide a final answer
 """
 
 QUALITY_REQUIREMENTS = """
@@ -140,8 +152,9 @@ that provides a mutually exclusive and collectively exhaustive (MECE) analysis o
 Your analysis should be thorough, accurate, and helpful for someone trying to understand this codebase.
 """
 
-# Combine all components to form the complete system prompt
-SYSTEM_PROMPT = f"{ROLE_AND_TASK}\n\n{GENERAL_ANALYSIS_GUIDELINES}\n\n{INPUT_PROCESSING_GUIDELINES}\n\n{CODE_ANALYSIS_STRATEGIES}\n\n{PLANNING_STRATEGY}\n\n{QUALITY_REQUIREMENTS}"
+# Combine components to form system prompts
+REACT_SYSTEM_PROMPT = f"{ROLE_AND_TASK}\n\n{GENERAL_ANALYSIS_GUIDELINES}\n\n{INPUT_PROCESSING_GUIDELINES}\n\n{CODE_ANALYSIS_STRATEGIES}\n\n{REACT_PLANNING_STRATEGY}\n\n{QUALITY_REQUIREMENTS}"
+REFLEXION_SYSTEM_PROMPT = f"{ROLE_AND_TASK}\n\n{GENERAL_ANALYSIS_GUIDELINES}\n\n{INPUT_PROCESSING_GUIDELINES}\n\n{CODE_ANALYSIS_STRATEGIES}\n\n{REFLEXION_PLANNING_STRATEGY}\n\n{QUALITY_REQUIREMENTS}"
 
 # Tool functions
 def find_all_matching_files(
@@ -276,150 +289,132 @@ TOOLS = {
     "calculate": calculate
 }
 
-class PathEncoder(json.JSONEncoder):
+class CustomEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, Path):
             return str(obj)
         return super().default(obj)
 
-class ReActAgent:
-    def __init__(self, model_name="gemini-2.0-flash", base_url="https://generativelanguage.googleapis.com/v1beta/openai/"):
-        """Initialize the ReAct agent with the specified model and API configuration."""
+class Agent:
+    """Abstract base class for codebase analysis agents."""
+    
+    def __init__(self, model_name="gpt-4o-mini", base_url=None):
+        """Initialize the agent with the specified model."""
         self.model_name = model_name
-        self.temperature = 0  # Always use temperature 0 for deterministic results
+        self.base_url = base_url
         self.memory = []
         self.final_answer = None
+        self.system_prompt = None  # To be defined by subclasses
         
         # Determine which API to use based on the model name
-        self.is_gemini_model = model_name in GEMINI_MODELS
-        self.is_openai_model = model_name in OPENAI_MODELS
-        
-        # Check if we have the appropriate API key
-        if self.is_gemini_model and not GEMINI_API_KEY:
-            raise ValueError(f"Model '{model_name}' requires GEMINI_API_KEY to be set")
-        if self.is_openai_model and not OPENAI_API_KEY:
-            raise ValueError(f"Model '{model_name}' requires OPENAI_API_KEY to be set")
-        
-        # Initialize the appropriate client
-        if self.is_gemini_model:
-            self.client = OpenAI(
-                api_key=GEMINI_API_KEY,
-                base_url=base_url
-            )
-        else:  # OpenAI model
-            self.client = OpenAI(
-                api_key=OPENAI_API_KEY
-            )
-        
-        # Format tools for API
-        self.openai_tools = self.create_openai_tool_definitions(TOOLS)
+        if model_name in GEMINI_MODELS:
+            if not GEMINI_API_KEY:
+                raise ValueError(f"GEMINI_API_KEY environment variable is required to use {model_name}")
+            import google.generativeai as genai
+            genai.configure(api_key=GEMINI_API_KEY)
+            self.client = genai
+            self.api_type = "gemini"
+        elif model_name in OPENAI_MODELS:
+            if not OPENAI_API_KEY:
+                raise ValueError(f"OPENAI_API_KEY environment variable is required to use {model_name}")
+            self.client = OpenAI(api_key=OPENAI_API_KEY, base_url=base_url)
+            self.api_type = "openai"
+        else:
+            raise ValueError(f"Unsupported model: {model_name}. Must be one of {GEMINI_MODELS + OPENAI_MODELS}")
     
     def create_openai_tool_definitions(self, tools_dict):
         """
-        Create OpenAI tool definitions from a dictionary of Python functions.
+        Create tool definitions from a dictionary of Python functions.
         
         Args:
-            tools_dict: Dictionary mapping tool names to their function implementations
-        
+            tools_dict: Dictionary mapping tool names to Python functions
+            
         Returns:
-            List of tool definitions in the format required by OpenAI's API
-
-        This is substantially inspired by the langgraph @tool decorator
-        
-        Raises:
-            TypeError: If a parameter type cannot be mapped to an OpenAI tool parameter type
+            List of tool definitions formatted for the OpenAI API
         """
-        import inspect
-        from typing import get_origin, get_args
-        openai_tools = []
+        tools = []
         
         for name, func in tools_dict.items():
-            # Extract parameter information from function signature
+            # Extract function signature
             sig = inspect.signature(func)
-            parameters = {}
-            required = []
+            
+            # Get docstring and parse it
+            docstring = inspect.getdoc(func) or ""
+            description = docstring.split("\n\n")[0] if docstring else ""
+            
+            # Build parameters
+            parameters = {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
             
             for param_name, param in sig.parameters.items():
-                # Skip 'self' parameter for class methods
-                if param_name == 'self':
+                # Skip self parameter for methods
+                if param_name == "self":
                     continue
-                    
-                # Determine parameter type
-                param_type = None
-                param_info = {}
                 
-                # Handle basic types
-                if param.annotation == str or param.annotation == inspect.Parameter.empty:
-                    param_type = "string"
-                elif param.annotation == int:
-                    param_type = "integer"
-                elif param.annotation == float:
-                    param_type = "number"
-                elif param.annotation == bool:
-                    param_type = "boolean"
-                # Handle List types
-                elif get_origin(param.annotation) == list:
-                    param_type = "array"
-                    item_type = get_args(param.annotation)[0] if get_args(param.annotation) else None
-                    
-                    if item_type == str:
-                        param_info["items"] = {"type": "string"}
-                    elif item_type == int:
-                        param_info["items"] = {"type": "integer"}
-                    elif item_type == float:
-                        param_info["items"] = {"type": "number"}
-                    elif item_type == bool:
-                        param_info["items"] = {"type": "boolean"}
-                    else:
-                        raise TypeError(f"Unsupported array item type {item_type} for parameter '{param_name}' in function '{name}'")
-                # Handle Dict types
-                elif get_origin(param.annotation) == dict:
-                    param_type = "object"
+                # Get parameter type annotation
+                param_type = param.annotation
+                if param_type is inspect.Parameter.empty:
+                    param_type = str
+                
+                # Convert Python types to JSON Schema types
+                if param_type == str:
+                    json_type = "string"
+                elif param_type == int:
+                    json_type = "integer"
+                elif param_type == float:
+                    json_type = "number"
+                elif param_type == bool:
+                    json_type = "boolean"
+                elif param_type == list or param_type == typing.List:
+                    json_type = "array"
+                elif param_type == dict or param_type == typing.Dict:
+                    json_type = "object"
                 else:
-                    # Unsupported type
-                    raise TypeError(f"Unsupported parameter type {param.annotation} for parameter '{param_name}' in function '{name}'")
+                    # For complex types, default to string
+                    json_type = "string"
                 
-                param_info["type"] = param_type
+                # Extract parameter description from docstring
+                param_desc = ""
+                if docstring:
+                    # Look for parameter in docstring (format: param_name: description)
+                    param_pattern = rf"{param_name}:\s*(.*?)(?:\n\s*\w+:|$)"
+                    param_match = re.search(param_pattern, docstring, re.DOTALL)
+                    if param_match:
+                        param_desc = param_match.group(1).strip()
                 
-                # Add description from docstring if available
-                if func.__doc__:
-                    # Try to extract parameter description from docstring
-                    docstring_lines = func.__doc__.split('\n')
-                    param_desc = None
-                    for line in docstring_lines:
-                        line = line.strip()
-                        if line.startswith(f"{param_name}:"):
-                            param_desc = line[len(param_name) + 1:].strip()
-                            break
-                    
-                    param_info["description"] = param_desc or f"Parameter for {name}"
+                # Add parameter to schema
+                parameters["properties"][param_name] = {
+                    "type": json_type,
+                    "description": param_desc
+                }
                 
-                parameters[param_name] = param_info
-                
-                # Check if parameter is required
-                if param.default == inspect.Parameter.empty:
-                    required.append(param_name)
+                # Mark required parameters
+                if param.default is inspect.Parameter.empty:
+                    parameters["required"].append(param_name)
             
-            # Create the tool definition
+            # Create tool definition
             tool_def = {
                 "type": "function",
                 "function": {
                     "name": name,
-                    "description": func.__doc__.split('\n')[0] if func.__doc__ else f"Function {name}",
-                    "parameters": {
-                        "type": "object",
-                        "properties": parameters,
-                        "required": required
-                    }
+                    "description": description,
+                    "parameters": parameters
                 }
             }
-            openai_tools.append(tool_def)
+            
+            tools.append(tool_def)
         
-        return openai_tools
+        return tools
     
     def initialise_memory(self, prompt, directory):
         """Initialise the agent's memory with the prompt and directory."""
-        self.memory = [{"role": "system", "content": SYSTEM_PROMPT}]
+        if not self.system_prompt:
+            raise ValueError("System prompt must be defined by subclasses")
+            
+        self.memory = [{"role": "system", "content": self.system_prompt}]
         self.memory.append({"role": "user", "content": f"Base directory: {directory}\n\n{prompt}"})
         self.final_answer = None
     
@@ -427,64 +422,64 @@ class ReActAgent:
         """Call the LLM with the current memory and tools."""
         try:
             # Call the appropriate API
-            api_type = "Gemini" if self.is_gemini_model else "OpenAI"
+            api_type = "Gemini" if self.api_type == "gemini" else "OpenAI"
             
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=self.memory,
-                tools=self.openai_tools,
-                temperature=self.temperature
+                tools=self.create_openai_tool_definitions(TOOLS),
+                temperature=0
             )
             return response.choices[0].message
         except Exception as e:
-            print(f"Error calling {api_type} API: {e}")
-            # Return a simple error message in the expected format
-            return {"content": f"Error: {str(e)}", "tool_calls": None}
+            error_msg = f"Error calling {api_type} API: {str(e)}"
+            print(error_msg)
+            raise ValueError(error_msg)
     
     def check_llm_result(self, assistant_message):
-        """Check the LLM result and return the appropriate action."""
-        print(f"\nLLM Response:\n{assistant_message.content}\n")
+        """
+        Check if the LLM result is a final answer or a tool call.
         
-        # Add the assistant's message to memory
+        Args:
+            assistant_message: The message from the assistant
+            
+        Returns:
+            tuple: (result_type, result_data)
+                result_type: "final_answer" or "tool_calls"
+                result_data: The final answer string or list of tool calls
+        """
         self.memory.append(assistant_message)
         
-        # Check if this is a final answer (no tool calls)
-        if not assistant_message.tool_calls:
-            if "Final Answer:" in assistant_message.content:
-                final_answer_match = re.search(r"Final Answer:(.+)", assistant_message.content, re.DOTALL)
-                if final_answer_match:
-                    return "final_answer", final_answer_match.group(1).strip()
+        if assistant_message.tool_calls:
+            return "tool_calls", assistant_message.tool_calls
+        else:
             return "final_answer", assistant_message.content
-        
-        # Otherwise, it's one or more tool calls
-        return "tool_calls", assistant_message.tool_calls
     
     def execute_tool(self, tool_call):
-        """Execute the requested tool and return the observation."""
+        """
+        Execute a tool call and return the result.
+        
+        Args:
+            tool_call: The tool call object from the LLM
+            
+        Returns:
+            str: The result of the tool execution
+        """
         tool_name = tool_call.function.name
         
+        if tool_name not in TOOLS:
+            return f"Error: Unknown tool {tool_name}"
+        
         try:
-            # Parse arguments
+            # Parse the arguments
             args = json.loads(tool_call.function.arguments)
             
-            # Check if the tool exists
-            if tool_name not in TOOLS:
-                return f"Error: Tool '{tool_name}' not found."
-            
-            # Execute the tool
-            print(f"Executing tool: {tool_name} with args: {args}")
+            # Call the tool function
             result = TOOLS[tool_name](**args)
             
-            # Format the response based on the tool and result type
-            if tool_name == "find_all_matching_files":
-                # Convert Path objects to strings and return a formatted response
-                if isinstance(result, list):
-                    file_paths = [str(path) for path in result]
-                    return f"Found {len(file_paths)} files matching the pattern:\n" + "\n".join(file_paths)
-            
-            # For other tools, use the custom JSON encoder to handle Path objects
-            if isinstance(result, list) or isinstance(result, dict):
-                result = json.loads(json.dumps(result, cls=PathEncoder))
+            # Convert result to string if it's not already
+            if not isinstance(result, str):
+                result = json.dumps(result, cls=CustomEncoder)
             
             return result
         except json.JSONDecodeError:
@@ -493,7 +488,24 @@ class ReActAgent:
             return f"Error executing tool {tool_name}: {str(e)}"
     
     def run(self, prompt, directory):
-        """Run the agent to analyse a codebase."""
+        """
+        Run the agent to analyse a codebase.
+        
+        This method must be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement the run method")
+
+
+class ReActAgent(Agent):
+    """Agent that uses the ReAct pattern for codebase analysis."""
+    
+    def __init__(self, model_name="gpt-4o-mini", base_url=None):
+        """Initialize the ReAct agent with the specified model."""
+        super().__init__(model_name, base_url)
+        self.system_prompt = REACT_SYSTEM_PROMPT
+    
+    def run(self, prompt, directory):
+        """Run the agent to analyse a codebase using the ReAct pattern."""
         self.initialise_memory(prompt, directory)
         max_steps = 15
         
@@ -530,26 +542,95 @@ class ReActAgent:
         
         return self.final_answer
 
-def get_command_line_args():
-    """
-    Parse and return command-line arguments.
-    
-    Returns:
-        argparse.Namespace: The parsed command-line arguments
-    """
-    parser = argparse.ArgumentParser(description="Analyse a codebase using a ReAct agent")
-    parser.add_argument("--directory", required=True, help="Path to the codebase directory")
-    parser.add_argument("--prompt-file", required=True, help="Path to the file containing the analysis prompt")
-    parser.add_argument("--model", default="gemini-2.0-flash", 
-                        choices=GEMINI_MODELS + OPENAI_MODELS,
-                        help="Model name used for analysis")
-    parser.add_argument("--base-url", default="https://generativelanguage.googleapis.com/v1beta/openai/", 
-                        help="Base URL for the Gemini API OpenAI compatibility endpoint (only used for Gemini models)")
-    
-    return parser.parse_args()
 
-def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str, base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/") -> str:
-    """Analyse a codebase using the ReAct agent with a prompt from an external file."""
+class ReflexionAgent(Agent):
+    """Agent that uses the Reflexion pattern for codebase analysis."""
+    
+    def __init__(self, model_name="gpt-4o-mini", base_url=None):
+        """Initialize the Reflexion agent with the specified model."""
+        super().__init__(model_name, base_url)
+        self.system_prompt = REFLEXION_SYSTEM_PROMPT
+    
+    def run(self, prompt, directory):
+        """Run the agent to analyse a codebase with reflection."""
+        self.initialise_memory(prompt, directory)
+        max_steps = 15
+        
+        for step in range(max_steps):
+            print(f"\n--- Step {step + 1} ---")
+            
+            # Call the LLM
+            assistant_message = self.call_llm()
+            
+            # Check the result
+            result_type, result_data = self.check_llm_result(assistant_message)
+            
+            if result_type == "final_answer":
+                self.final_answer = result_data
+                break
+            elif result_type == "tool_calls":
+                # Execute each tool call
+                for tool_call in result_data:
+                    # Execute the tool
+                    observation = self.execute_tool(tool_call)
+                    
+                    # Add the observation to memory
+                    self.memory.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "content": observation
+                    })
+                
+                # Add a reflection prompt
+                self.memory.append({
+                    "role": "user",
+                    "content": "Reflect on your previous actions. Were they effective? How can you improve your approach?"
+                })
+                
+                # Get reflection from LLM
+                reflection_message = self.call_llm()
+                
+                # Add reflection to memory
+                self.memory.append(reflection_message)
+            
+            print(f"Memory length: {len(self.memory)} messages")
+        
+        if self.final_answer is None:
+            self.final_answer = "Failed to complete the analysis within the step limit."
+        
+        return self.final_answer
+
+def get_command_line_args():
+    """Get command line arguments."""
+    parser = argparse.ArgumentParser(description="Analyse a codebase using an LLM agent.")
+    parser.add_argument("directory", help="Directory containing the codebase to analyse")
+    parser.add_argument("prompt_file", help="Path to a file containing the analysis prompt")
+    
+    # Define available models based on which API keys are set
+    available_models = []
+    if OPENAI_API_KEY:
+        available_models.extend(OPENAI_MODELS)
+    if GEMINI_API_KEY:
+        available_models.extend(GEMINI_MODELS)
+    
+    parser.add_argument("--model", choices=available_models, default=available_models[0] if available_models else None,
+                      help="Model to use for analysis")
+    parser.add_argument("--base-url", default="https://generativelanguage.googleapis.com/v1beta/openai/",
+                      help="Base URL for the API (only used for Gemini models)")
+    parser.add_argument("--agent-type", choices=["react", "reflexion"], default="react",
+                      help="Type of agent to use for analysis (react or reflexion)")
+    
+    args = parser.parse_args()
+    
+    # Validate that we have a model available
+    if not available_models:
+        parser.error("No API keys set. Please set OPENAI_API_KEY or GEMINI_API_KEY environment variables.")
+    
+    return args
+
+def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str, agent_type: str = "react", base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/") -> str:
+    """Analyse a codebase using the specified agent type with a prompt from an external file."""
     try:
         directory = Path(directory_path).resolve()
         if not directory.exists():
@@ -558,8 +639,14 @@ def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str
         # Read the prompt
         prompt = read_prompt_file(prompt_file_path)
         
-        # Create and run the agent
-        agent = ReActAgent(model_name=model_name, base_url=base_url)
+        # Create and run the agent based on agent_type
+        if agent_type == "reflexion":
+            agent = ReflexionAgent(model_name=model_name, base_url=base_url)
+            print("Using Reflexion agent with reflection capabilities")
+        else:
+            agent = ReActAgent(model_name=model_name, base_url=base_url)
+            print("Using standard ReAct agent")
+            
         result = agent.run(prompt, directory)
         
         return result
@@ -595,10 +682,9 @@ def save_results(analysis_result: str, model_name: str) -> Path:
     return output_path
 
 def main():
-
     try:
         args = get_command_line_args()
-        analysis_result = analyse_codebase(args.directory, args.prompt_file, args.model, args.base_url)
+        analysis_result = analyse_codebase(args.directory, args.prompt_file, args.model, args.agent_type, args.base_url)
         save_results(analysis_result, args.model)
 
     except Exception as e:
