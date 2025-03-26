@@ -594,44 +594,75 @@ class ReflexionAgent(TechWriterAgent):
         """Run the agent to analyse a codebase with reflection."""
         self.initialise_memory(prompt, directory)
         max_steps = 15
+        step_count = 0
         
-        for step in range(max_steps):
-            logger.info(f"\n--- Step {step + 1} ---")
+        while step_count < max_steps:
+            step_count += 1
+            logger.info(f"\n--- Step {step_count} ---")
             
             # Call the LLM
-            assistant_message = self.call_llm()
-            
-            # Check the result
-            result_type, result_data = self.check_llm_result(assistant_message)
-            
-            if result_type == "final_answer":
-                self.final_answer = result_data
-                break
-            elif result_type == "tool_calls":
-                # Execute each tool call
-                for tool_call in result_data:
-                    # Execute the tool
-                    observation = self.execute_tool(tool_call)
+            try:
+                assistant_message = self.call_llm()
+                
+                # Check the result
+                result_type, result_data = self.check_llm_result(assistant_message)
+                
+                if result_type == "final_answer":
+                    self.final_answer = result_data
+                    break
+                elif result_type == "tool_calls":
+                    # Execute each tool call and add to memory
+                    for tool_call in result_data:
+                        # Execute the tool
+                        observation = self.execute_tool(tool_call)
+                        
+                        # Add the observation to memory
+                        self.memory.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "content": observation
+                        })
                     
-                    # Add the observation to memory
-                    self.memory.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_call.function.name,
-                        "content": observation
-                    })
-                
-                # Add a reflection prompt
-                self.memory.append({
-                    "role": "user",
-                    "content": "Reflect on your previous actions. Were they effective? How can you improve your approach?"
-                })
-                
-                # Get reflection from LLM
-                reflection_message = self.call_llm()
-                
-                # Add reflection to memory
-                self.memory.append(reflection_message)
+                    # After processing all tool calls, we need another LLM call to process them
+                    # This is where we'll add a special instruction for reflection in the system prompt
+                    
+                    # Temporarily modify the system prompt to include a reflection instruction
+                    # This is a key aspect of the Reflexion pattern
+                    original_system_prompt = self.system_prompt
+                    reflection_instruction = "\n\nBefore responding, reflect on your previous actions. Were they effective? How can you improve your approach? Incorporate these reflections into your response."
+                    
+                    # Find the system message in memory and update it
+                    for i, message in enumerate(self.memory):
+                        if message.get("role") == "system":
+                            # Store original system message
+                            original_system_message = self.memory[i].copy()
+                            # Update with reflection instruction
+                            self.memory[i]["content"] += reflection_instruction
+                            break
+                    
+                    # The next call_llm() will use the updated system prompt with reflection
+                    # We don't need to do anything special here, as the next iteration will handle it
+                    
+                    # Restore the original system message after the next iteration
+                    if step_count + 1 < max_steps:
+                        # Schedule restoration for next iteration
+                        self.memory_restoration_needed = True
+                        self.original_system_message = original_system_message
+                    
+            except Exception as e:
+                logger.error(f"Unexpected error: {e}")
+                self.final_answer = f"Error running code analysis: {e}"
+                break
+            
+            # Check if we need to restore the system message
+            if hasattr(self, 'memory_restoration_needed') and self.memory_restoration_needed:
+                # Restore original system message
+                for i, message in enumerate(self.memory):
+                    if message.get("role") == "system":
+                        self.memory[i] = self.original_system_message
+                        break
+                self.memory_restoration_needed = False
             
             logger.info(f"Memory length: {len(self.memory)} messages")
         
