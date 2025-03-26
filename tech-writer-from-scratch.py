@@ -41,7 +41,7 @@ if not GEMINI_API_KEY and not OPENAI_API_KEY:
 
 # Define model providers: check, high volume and fast. 
 GEMINI_MODELS = ["gemini-2.0-flash"]
-OPENAI_MODELS = ["gpt-4o-mini"]
+OPENAI_MODELS = ["gpt-4o-mini", "gpt-4o"]
 
 
 def get_gitignore_spec(directory: str) -> pathspec.PathSpec:
