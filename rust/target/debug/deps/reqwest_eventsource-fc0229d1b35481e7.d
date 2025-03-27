@@ -1,0 +1,9 @@
+/Users/julian/expts/tech-writer-agent/rust/target/debug/deps/libreqwest_eventsource-fc0229d1b35481e7.rmeta: /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/lib.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/error.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/event_source.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/reqwest_ext.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/retry.rs
+
+/Users/julian/expts/tech-writer-agent/rust/target/debug/deps/reqwest_eventsource-fc0229d1b35481e7.d: /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/lib.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/error.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/event_source.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/reqwest_ext.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/retry.rs
+
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/lib.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/error.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/event_source.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/reqwest_ext.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/reqwest-eventsource-0.4.0/src/retry.rs:

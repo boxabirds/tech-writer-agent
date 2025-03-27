@@ -1,12 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import { Command } from 'commander';
 import * as dotenv from 'dotenv';
 import ignore from 'ignore';
 import isBinaryPath from 'is-binary-path';
 import OpenAI from 'openai';
-import { promisify } from 'util';
 import { prompts } from './prompts';
 
 // Load environment variables

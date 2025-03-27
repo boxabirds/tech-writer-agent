@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Rust library for OpenAI"><title>async_openai - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../static.files/rustdoc-b0742ba02757f159.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="async_openai" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0 (90b35a623 2024-11-26) (Homebrew)" data-channel="1.83.0" data-search-js="search-f0d225181b97f9a4.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-f070b9041d14864c.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../async_openai/index.html">async_<wbr>openai</a><span class="version">0.16.3</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#creating-client" title="Creating client">Creating client</a></li><li><a href="#microsoft-azure-endpoints" title="Microsoft Azure Endpoints">Microsoft Azure Endpoints</a></li><li><a href="#making-requests" title="Making requests">Making requests</a></li><li><a href="#examples" title="Examples">Examples</a></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>async_openai</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/async_openai/lib.rs.html#1-124">source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Rust library for OpenAI</p>
+<h3 id="creating-client"><a class="doc-anchor" href="#creating-client">§</a>Creating client</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>async_openai::{Client, config::OpenAIConfig};
+
+<span class="comment">// Create a OpenAI client with api key from env var OPENAI_API_KEY and default base url.
+</span><span class="kw">let </span>client = Client::new();
+
+<span class="comment">// Above is shortcut for
+</span><span class="kw">let </span>config = OpenAIConfig::default();
+<span class="kw">let </span>client = Client::with_config(config);
+
+<span class="comment">// OR use API key from different source and a non default organization
+</span><span class="kw">let </span>api_key = <span class="string">"sk-..."</span>; <span class="comment">// This secret could be from a file, or environment variable.
+</span><span class="kw">let </span>config = OpenAIConfig::new()
+    .with_api_key(api_key)
+    .with_org_id(<span class="string">"the-continental"</span>);
+
+<span class="kw">let </span>client = Client::with_config(config);
+
+<span class="comment">// Use custom reqwest client
+</span><span class="kw">let </span>http_client = reqwest::ClientBuilder::new().user_agent(<span class="string">"async-openai"</span>).build().unwrap();
+<span class="kw">let </span>client = Client::new().with_http_client(http_client);</code></pre></div>
+<h3 id="microsoft-azure-endpoints"><a class="doc-anchor" href="#microsoft-azure-endpoints">§</a>Microsoft Azure Endpoints</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>async_openai::{Client, config::AzureConfig};
+
+<span class="kw">let </span>config = AzureConfig::new()
+    .with_api_base(<span class="string">"https://my-resource-name.openai.azure.com"</span>)
+    .with_api_version(<span class="string">"2023-03-15-preview"</span>)
+    .with_deployment_id(<span class="string">"deployment-id"</span>)
+    .with_api_key(<span class="string">"..."</span>);
+
+<span class="kw">let </span>client = Client::with_config(config);
+
+<span class="comment">// Note that Azure OpenAI service does not support all APIs and `async-openai`
+// doesn't restrict and still allows calls to all of the APIs as OpenAI.
+</span></code></pre></div>
+<h3 id="making-requests"><a class="doc-anchor" href="#making-requests">§</a>Making requests</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>
+ <span class="kw">use </span>async_openai::{Client, types::{CreateCompletionRequestArgs}};
+
+ <span class="comment">// Create client
+ </span><span class="kw">let </span>client = Client::new();
+
+ <span class="comment">// Create request using builder pattern
+ // Every request struct has companion builder struct with same name + Args suffix
+ </span><span class="kw">let </span>request = CreateCompletionRequestArgs::default()
+     .model(<span class="string">"text-davinci-003"</span>)
+     .prompt(<span class="string">"Tell me the recipe of alfredo pasta"</span>)
+     .max_tokens(<span class="number">40_u16</span>)
+     .build()
+     .unwrap();
+
+ <span class="comment">// Call API
+ </span><span class="kw">let </span>response = client
+     .completions()      <span class="comment">// Get the API "group" (completions, images, etc.) from the client
+     </span>.create(request)    <span class="comment">// Make the API call in that "group"
+     </span>.<span class="kw">await
+     </span>.unwrap();
+
+ <span class="macro">println!</span>(<span class="string">"{}"</span>, response.choices.first().unwrap().text);</code></pre></div>
+<h3 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h3>
+<p>For full working examples for all supported features see <a href="https://github.com/64bit/async-openai/tree/main/examples">examples</a> directory in the repository.</p>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="mod" href="config/index.html" title="mod async_openai::config">config</a></div><div class="desc docblock-short">Client configurations: <a href="config/struct.OpenAIConfig.html" title="struct async_openai::config::OpenAIConfig">OpenAIConfig</a> for OpenAI, <a href="config/struct.AzureConfig.html" title="struct async_openai::config::AzureConfig">AzureConfig</a> for Azure OpenAI Service.</div></li><li><div class="item-name"><a class="mod" href="error/index.html" title="mod async_openai::error">error</a></div><div class="desc docblock-short">Errors originating from API calls, parsing responses, and reading-or-writing to the file system.</div></li><li><div class="item-name"><a class="mod" href="types/index.html" title="mod async_openai::types">types</a></div><div class="desc docblock-short">Types used in OpenAI API requests and responses.
+These types are created from component schemas in the <a href="https://github.com/openai/openai-openapi">OpenAPI spec</a></div></li></ul><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="struct" href="struct.AssistantFiles.html" title="struct async_openai::AssistantFiles">Assistant<wbr>Files</a></div><div class="desc docblock-short">Files attached to an assistant.</div></li><li><div class="item-name"><a class="struct" href="struct.Assistants.html" title="struct async_openai::Assistants">Assistants</a></div><div class="desc docblock-short">Build assistants that can call models and use tools to perform tasks.</div></li><li><div class="item-name"><a class="struct" href="struct.Audio.html" title="struct async_openai::Audio">Audio</a></div><div class="desc docblock-short">Turn audio into text
+Related guide: <a href="https://platform.openai.com/docs/guides/speech-to-text">Speech to text</a></div></li><li><div class="item-name"><a class="struct" href="struct.Chat.html" title="struct async_openai::Chat">Chat</a></div><div class="desc docblock-short">Given a list of messages comprising a conversation, the model will return a response.</div></li><li><div class="item-name"><a class="struct" href="struct.Client.html" title="struct async_openai::Client">Client</a></div><div class="desc docblock-short">Client is a container for config, backoff and http_client
+used to make API calls.</div></li><li><div class="item-name"><a class="struct" href="struct.Completions.html" title="struct async_openai::Completions">Completions</a></div><div class="desc docblock-short">Given a prompt, the model will return one or more predicted completions,
+and can also return the probabilities of alternative tokens at each position.
+We recommend most users use our Chat completions API.
+<a href="https://platform.openai.com/docs/deprecations/2023-07-06-gpt-and-embeddings">Learn more</a></div></li><li><div class="item-name"><a class="struct" href="struct.Edits.html" title="struct async_openai::Edits">Edits</a><wbr><span class="stab deprecated" title="">Deprecated</span></div><div class="desc docblock-short">Given a prompt and an instruction, the model will return
+an edited version of the prompt.</div></li><li><div class="item-name"><a class="struct" href="struct.Embeddings.html" title="struct async_openai::Embeddings">Embeddings</a></div><div class="desc docblock-short">Get a vector representation of a given input that can be easily
+consumed by machine learning models and algorithms.</div></li><li><div class="item-name"><a class="struct" href="struct.Files.html" title="struct async_openai::Files">Files</a></div><div class="desc docblock-short">Files are used to upload documents that can be used with features like Assistants and Fine-tuning.</div></li><li><div class="item-name"><a class="struct" href="struct.FineTunes.html" title="struct async_openai::FineTunes">Fine<wbr>Tunes</a><wbr><span class="stab deprecated" title="">Deprecated</span></div><div class="desc docblock-short">Manage fine-tuning jobs to tailor a model to your specific training data.</div></li><li><div class="item-name"><a class="struct" href="struct.FineTuning.html" title="struct async_openai::FineTuning">Fine<wbr>Tuning</a></div><div class="desc docblock-short">Manage fine-tuning jobs to tailor a model to your specific training data.</div></li><li><div class="item-name"><a class="struct" href="struct.Images.html" title="struct async_openai::Images">Images</a></div><div class="desc docblock-short">Given a prompt and/or an input image, the model will generate a new image.</div></li><li><div class="item-name"><a class="struct" href="struct.MessageFiles.html" title="struct async_openai::MessageFiles">Message<wbr>Files</a></div><div class="desc docblock-short">Files attached to a message.</div></li><li><div class="item-name"><a class="struct" href="struct.Messages.html" title="struct async_openai::Messages">Messages</a></div><div class="desc docblock-short">Represents a message within a <a href="https://platform.openai.com/docs/api-reference/threads">thread</a>.</div></li><li><div class="item-name"><a class="struct" href="struct.Models.html" title="struct async_openai::Models">Models</a></div><div class="desc docblock-short">List and describe the various models available in the API.
+You can refer to the <a href="https://platform.openai.com/docs/models">Models</a> documentation to understand what
+models are available and the differences between them.</div></li><li><div class="item-name"><a class="struct" href="struct.Moderations.html" title="struct async_openai::Moderations">Moderations</a></div><div class="desc docblock-short">Given a input text, outputs if the model classifies it as violating OpenAI’s content policy.</div></li><li><div class="item-name"><a class="struct" href="struct.Runs.html" title="struct async_openai::Runs">Runs</a></div><div class="desc docblock-short">Represents an execution run on a thread.</div></li><li><div class="item-name"><a class="struct" href="struct.Steps.html" title="struct async_openai::Steps">Steps</a></div><div class="desc docblock-short">Represents a step in execution of a run.</div></li><li><div class="item-name"><a class="struct" href="struct.Threads.html" title="struct async_openai::Threads">Threads</a></div><div class="desc docblock-short">Create threads that assistants can interact with.</div></li></ul></section></div></main></body></html>

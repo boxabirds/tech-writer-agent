@@ -1,0 +1,12 @@
+/Users/julian/expts/tech-writer-agent/rust/target/debug/deps/libignore-d0b8be74d6031549.rmeta: /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/lib.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/default_types.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/dir.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/gitignore.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/overrides.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/pathutil.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/types.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/walk.rs
+
+/Users/julian/expts/tech-writer-agent/rust/target/debug/deps/ignore-d0b8be74d6031549.d: /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/lib.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/default_types.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/dir.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/gitignore.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/overrides.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/pathutil.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/types.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/walk.rs
+
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/lib.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/default_types.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/dir.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/gitignore.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/overrides.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/pathutil.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/types.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ignore-0.4.23/src/walk.rs:

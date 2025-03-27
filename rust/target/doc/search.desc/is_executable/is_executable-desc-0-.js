@@ -1,0 +1,1 @@
+searchState.loadedDescShard("is_executable", 0, "<code>is_executable</code>\nAn extension trait for <code>std::fs::Path</code> providing an …\nReturns <code>true</code> if there is a file at the given path and it is\nReturns <code>true</code> if there is a file at the given path and it is")

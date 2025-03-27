@@ -1,0 +1,10 @@
+/Users/julian/expts/tech-writer-agent/rust/target/debug/deps/libeventsource_stream-c8c394427bfe4ea2.rmeta: /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/lib.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/event.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/event_stream.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/parser.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/traits.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/utf8_stream.rs
+
+/Users/julian/expts/tech-writer-agent/rust/target/debug/deps/eventsource_stream-c8c394427bfe4ea2.d: /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/lib.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/event.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/event_stream.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/parser.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/traits.rs /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/utf8_stream.rs
+
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/lib.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/event.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/event_stream.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/parser.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/traits.rs:
+/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/eventsource-stream-0.2.3/src/utf8_stream.rs:
