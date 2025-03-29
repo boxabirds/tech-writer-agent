@@ -1,0 +1,75 @@
+ New Starter Guide Generation
+
+Create a comprehensive guide for new team members joining the project. Focus on providing both high-level understanding and practical setup instructions.
+
+## Required Sections
+
+1. **Project Overview**
+   - What is this project?
+   - What problems does it solve?
+   - Who are the target users?
+   - What makes this project unique or interesting?
+   - Include a high-level architecture diagram using Mermaid
+
+2. **Getting Started**
+   - Prerequisites and system requirements
+   - Step-by-step environment setup instructions
+   - Common setup issues and their solutions
+   - How to verify the setup is working
+   - Development workflow overview
+
+3. **Development Environment**
+   - IDE setup and recommended extensions
+   - Code style and formatting guidelines
+   - Git workflow and branching strategy
+   - How to run tests
+   - How to make and submit changes
+
+4. **Project Structure**
+   - Overview of key directories and their purposes
+   - Important configuration files
+   - Build and deployment process
+   - Where to find documentation
+   - Key dependencies and their purposes
+
+5. **First Tasks**
+   - Identify and prioritize TODOs from the codebase
+   - Suggest starter tasks based on skill level
+   - How to get help and who to ask
+   - Code review process
+   - How to contribute to documentation
+
+6. **Common Workflows**
+   - How to run the application locally
+   - How to debug issues
+   - How to add new features
+   - How to fix bugs
+   - How to optimize performance
+
+7. **Team Practices**
+   - Communication channels
+   - Meeting schedules
+   - Code review guidelines
+   - Documentation standards
+   - Release process
+
+## Output Format Guidelines
+
+- Begin with a clear, engaging introduction that explains the project's purpose
+- Use clear headings and subheadings for easy navigation
+- Include code snippets and examples where relevant
+- Add Mermaid diagrams for visual explanations
+- Include troubleshooting guides for common issues
+- End with a "Next Steps" section
+- Use markdown formatting for readability
+- Include links to additional resources where available
+
+## Special Instructions
+
+- Focus on practical, actionable information
+- Include both beginner-friendly explanations and advanced details
+- Highlight any project-specific conventions or patterns
+- Provide context for why certain decisions were made
+- Include tips for avoiding common pitfalls
+- Make sure all setup instructions are complete and accurate
+- Include verification steps for each setup process 

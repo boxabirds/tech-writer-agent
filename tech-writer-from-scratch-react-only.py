@@ -15,6 +15,7 @@ import inspect
 import typing
 import logging
 import textwrap
+import sys
 
 
 # Configure logging
@@ -428,9 +429,21 @@ def call_llm(model_name, memory, base_url=None):
         )
         return response.choices[0].message
     except Exception as e:
-        error_msg = f"Error calling API: {str(e)}"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
+        error_msg = str(e)
+        logger.error(f"Error calling API: {error_msg}")
+        
+        # Check for specific API errors
+        if "insufficient_quota" in error_msg:
+            logger.error("API quota exceeded. Please check your billing details.")
+            sys.exit(2)  # Special exit code for quota errors
+        elif "429" in error_msg:
+            logger.error("Rate limit exceeded. Please try again later.")
+            sys.exit(3)  # Special exit code for rate limit errors
+        elif "401" in error_msg or "403" in error_msg:
+            logger.error("Authentication error. Please check your API key.")
+            sys.exit(4)  # Special exit code for auth errors
+        else:
+            raise ValueError(error_msg)
 
 def check_llm_result(assistant_message, memory):
     """
@@ -538,30 +551,15 @@ def run_analysis(prompt, directory, model_name="gpt-4o-mini", base_url=None):
     return final_answer
 
 def get_command_line_args():
-    """Get command line arguments."""
-    parser = argparse.ArgumentParser(description="Analyse a codebase using an LLM agent.")
-    parser.add_argument("directory", help="Directory containing the codebase to analyse")
-    parser.add_argument("prompt_file", help="Path to a file containing the analysis prompt")
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Analyze a codebase using LLM")
+    parser.add_argument("directory", help="Directory to analyze")
+    parser.add_argument("prompt_file", help="Path to prompt file")
+    parser.add_argument("--model", default="gpt-4o-mini", help="Model to use for analysis")
+    parser.add_argument("--base_url", help="Base URL for API calls")
+    parser.add_argument("--output_type", default="output", help="Type of output (output, assessment, refinement, final-assessment)")
     
-    # Define available models based on which API keys are set
-    available_models = []
-    if OPENAI_API_KEY:
-        available_models.extend(OPENAI_MODELS)
-    if GEMINI_API_KEY:
-        available_models.extend(GEMINI_MODELS)
-    
-    parser.add_argument("--model", choices=available_models, default=available_models[0] if available_models else None,
-                      help="Model to use for analysis")
-    parser.add_argument("--base-url", default=None,
-                      help="Base URL for the API (automatically set based on model if not provided)")
-    
-    args = parser.parse_args()
-    
-    # Validate that we have a model available
-    if not available_models:
-        parser.error("No API keys set. Please set OPENAI_API_KEY or GEMINI_API_KEY environment variables.")
-    
-    return args
+    return parser.parse_args()
 
 def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str, base_url: str = None) -> str:
     """Analyse a codebase using the specified model with a prompt from an external file."""
@@ -595,13 +593,14 @@ def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str
         logger.error(f"Unexpected error: {e}")
         return f"Error running code analysis: {str(e)}"
 
-def save_results(analysis_result: str, model_name: str) -> Path:
+def save_results(analysis_result: str, model_name: str, output_type: str = "output") -> Path:
     """
     Save analysis results to a timestamped Markdown file in the output directory.
     
     Args:
         analysis_result: The analysis text to save
         model_name: The name of the model used for analysis
+        output_type: The type of output (output, assessment, refinement, final-assessment)
         
     Returns:
         Path to the saved file
@@ -612,7 +611,7 @@ def save_results(analysis_result: str, model_name: str) -> Path:
     
     # Generate timestamp for filename
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_filename = f"{timestamp}-react-{model_name}.md"
+    output_filename = f"{timestamp}-react-{model_name}-{output_type}.md"
     output_path = output_dir / output_filename
     
     # Save results to markdown file
@@ -628,20 +627,25 @@ def save_results(analysis_result: str, model_name: str) -> Path:
         raise IOError(f"Failed to save results: {str(e)}")
 
 def main():
+    args = get_command_line_args()
+    
     try:
-        args = get_command_line_args()
         analysis_result = analyse_codebase(args.directory, args.prompt_file, args.model, args.base_url)
-        save_results(analysis_result, args.model)
-
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"File error: {str(e)}")
-        return 1
-    except ValueError as e:
-        logger.error(f"Value error: {str(e)}")
-        return 1
+        save_results(analysis_result, args.model, args.output_type)
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        return 1
+        logger.error(f"Error: {e}")
+        # Check for specific API errors
+        if "insufficient_quota" in str(e):
+            logger.error("API quota exceeded. Please check your billing details.")
+            sys.exit(2)  # Special exit code for quota errors
+        elif "429" in str(e):
+            logger.error("Rate limit exceeded. Please try again later.")
+            sys.exit(3)  # Special exit code for rate limit errors
+        elif "401" in str(e) or "403" in str(e):
+            logger.error("Authentication error. Please check your API key.")
+            sys.exit(4)  # Special exit code for auth errors
+        else:
+            sys.exit(1)  # Generic error
 
 if __name__ == "__main__":
     main() 
