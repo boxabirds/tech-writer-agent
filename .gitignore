@@ -33,6 +33,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Node.js
+node_modules/
+
 # Output files
 output/
 
@@ -41,3 +44,26 @@ output/
 .vscode/
 *.swp
 *.swo
+
+# Rust
+/target/
+**/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+.rustc_info.json
+*.rlib
+*.rmeta
+*.d
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+**/.fingerprint/
+**/incremental/
+**/.future-incompat-report.json
+**/dep-*
+**/s-*
+**/*.lock
