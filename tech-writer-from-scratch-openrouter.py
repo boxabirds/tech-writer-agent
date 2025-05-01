@@ -49,7 +49,7 @@ MODEL_NAME_TO_OPENROUTER_ID = {
     "gpt-4.1-mini": "openai/gpt-4.1-mini",
     "gpt-4.1-nano": "openai/gpt-4.1-nano",
     # Gemini
-    "gemini-2.0-flash": "google/gemini-2.0-flash",
+    "gemini-2.0-flash": "google/gemini-2.0-flash-001",
     "gemini-2.5-pro-preview-03-25": "google/gemini-2.5-pro-preview-03-25",
     "gemini-2.5-flash-preview-04-17": "google/gemini-2.5-flash-preview-04-17"
 }
@@ -95,35 +95,6 @@ def calculate(expression: str) -> Dict[str, Any]:
     except Exception as e:
         return {"expression": expression, "error": str(e)}
 
-# OpenRouter API Client (minimal, standalone)
-class OpenRouterClient:
-    def __init__(self, api_key: str, base_url: str = OPENROUTER_BASE_URL):
-        self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
-        self.headers = {
-            "Authorization": f"Bearer {api_key}",
-            "HTTP-Referer": "https://openrouter.ai/docs",
-            "X-Title": "TechWriterAgent"
-        }
-
-    def list_models(self) -> List[Dict[str, Any]]:
-        resp = requests.get(f"{self.base_url}/models", headers=self.headers)
-        resp.raise_for_status()
-        return resp.json().get("data", [])
-
-    def get_pricing(self) -> Dict[str, Any]:
-        resp = requests.get(f"{self.base_url}/pricing", headers=self.headers)
-        resp.raise_for_status()
-        return resp.json()
-
-    def chat_completion(self, model: str, messages: List[Dict[str, str]], tools: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-        data = {"model": model, "messages": messages}
-        if tools:
-            data["tools"] = tools
-        resp = requests.post(f"{self.base_url}/chat/completions", headers=self.headers, json=data)
-        resp.raise_for_status()
-        return resp.json()
-
 # TechWriterAgent (OpenRouter)
 class TechWriterAgentOpenRouter:
     def __init__(self, model_name: str = "gpt-4o-mini"):
@@ -133,7 +104,6 @@ class TechWriterAgentOpenRouter:
             raise ValueError(f"Model '{model_name}' is not supported. Choose from: {list(MODEL_NAME_TO_OPENROUTER_ID.keys())}")
         self.model_name = model_name
         self.openrouter_model_id = MODEL_NAME_TO_OPENROUTER_ID[model_name]
-        self.client = OpenRouterClient(OPENROUTER_API_KEY)
         self.memory = []
         self.final_answer = None
         self.system_prompt = self._build_system_prompt()
@@ -144,12 +114,6 @@ class TechWriterAgentOpenRouter:
         }
         self.token_usage = 0
         self.cost_usd = 0.0
-
-    def _build_system_prompt(self) -> str:
-        return textwrap.dedent("""
-        You are an expert tech writer that helps teams understand codebases with accurate and concise supporting analysis and documentation.
-        Your task is to analyse the local filesystem to understand the structure and functionality of a codebase. Use UK English spelling throughout.
-        """)
 
     def create_tool_definitions(self) -> List[Dict[str, Any]]:
         # Minimal OpenAI-compatible tool schema
@@ -165,7 +129,26 @@ class TechWriterAgentOpenRouter:
         ]
 
     def call_llm(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
-        return self.client.chat_completion(self.openrouter_model_id, messages, tools=self.create_tool_definitions())
+        # Prepare OpenRouter HTTP call
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://openrouter.ai/docs",
+            "X-Title": "TechWriterAgent"
+        }
+        payload = {
+            "model": self.openrouter_model_id,
+            "messages": messages,
+            "usage": {"include": True}
+        }
+        response = requests.post(
+            OPENROUTER_CHAT_ENDPOINT,
+            headers=headers,
+            json=payload,
+            timeout=120
+        )
+        response.raise_for_status()
+        return response.json()
 
     def run(self, prompt: str, directory: str) -> str:
         self.memory = [
@@ -175,22 +158,23 @@ class TechWriterAgentOpenRouter:
         start_time = time.time()
         result = self.call_llm(self.memory)
         end_time = time.time()
-        # Extract completion, usage, and cost
-        completion = result["choices"][0]["message"]["content"]
         usage = result.get("usage", {})
         self.token_usage = usage.get("total_tokens", 0)
-        self.cost_usd = self._calculate_cost(self.openrouter_model_id, self.token_usage)
+        # Use OpenRouter native cost (guaranteed to exist, but cast defensively)
+        self.cost_usd = float(usage.get("cost", 0.0) or 0.0)
+        completion = result["choices"][0]["message"]["content"]
         self.final_answer = completion
         logger.info(f"Model: {self.model_name} | Tokens: {self.token_usage} | Cost: ${self.cost_usd:.6f} | Time: {end_time - start_time:.2f}s")
         return completion
 
+    def _build_system_prompt(self) -> str:
+        return textwrap.dedent("""
+        You are an expert tech writer that helps teams understand codebases with accurate and concise supporting analysis and documentation.
+        Your task is to analyse the local filesystem to understand the structure and functionality of a codebase. Use UK English spelling throughout.
+        """)
+
     def _calculate_cost(self, model: str, total_tokens: int) -> float:
-        pricing = self.client.get_pricing()
-        # Find model pricing info
-        model_price = next((p for p in pricing.get("models", []) if p["id"] == model), None)
-        if model_price:
-            price_per_million = model_price.get("price_per_million_tokens", 0)
-            return (total_tokens / 1_000_000) * price_per_million
+        # Deprecated: OpenRouter always returns cost in response
         return 0.0
 
 # Command-line interface
@@ -203,33 +187,55 @@ def main():
     args = parser.parse_args()
 
     prompt = read_prompt_file(args.prompt_file)
-    agent = TechWriterAgentOpenRouter(model_name=args.model)
-    start_time = time.time()
     try:
+        agent = TechWriterAgentOpenRouter(model_name=args.model)
+        start = time.time()
         result = agent.run(prompt, args.directory)
+        runtime = time.time() - start
         success = True
     except Exception as e:
-        result = f"Error: {str(e)}"
+        runtime = 0.0
         success = False
-    end_time = time.time()
-    runtime = end_time - start_time
-
+        error_message = str(e)
+        import traceback
+        tb = traceback.format_exc()
     if args.json:
-        output = {
-            "result": agent.final_answer if success else result,
-            "model": agent.model_name,
-            "tokens": agent.token_usage,
-            "cost_usd": agent.cost_usd,
-            "runtime": runtime,
-            "success": success
-        }
+        if success:
+            output = {
+                "result": agent.final_answer,
+                "model": agent.model_name,
+                "tokens": agent.token_usage,
+                "cost_usd": agent.cost_usd,
+                "runtime": runtime,
+                "success": True
+            }
+        else:
+            output = {
+                "result": None,
+                "model": args.model,
+                "tokens": 0,
+                "cost_usd": 0.0,
+                "runtime": runtime,
+                "success": False,
+                "error": error_message,
+                "traceback": tb
+            }
         print(json.dumps(output, ensure_ascii=False))
     else:
-        print("\n=== Analysis Result ===\n")
-        print(agent.final_answer if success else result)
-        print("\n=== Token Usage ===\n")
-        print(f"Tokens used: {agent.token_usage}")
-        print(f"Cost (USD): ${agent.cost_usd:.6f}")
+        if success:
+            print("\n=== Analysis Result ===\n")
+            print(agent.final_answer)
+            print("\n=== Token Usage ===\n")
+            print(f"Tokens used: {agent.token_usage}")
+            if agent.cost_usd is not None:
+                print(f"Cost (USD): ${agent.cost_usd:.6f}")
+            else:
+                print("Cost (USD): N/A")
+        else:
+            print("\n=== Error ===\n")
+            print(error_message)
+            print("\n=== Traceback ===\n")
+            print(tb)
 
 if __name__ == "__main__":
     main()
