@@ -4,6 +4,21 @@
 
 The Tech Writer Agent is an AI-powered tool that helps teams understand codebases by automatically generating comprehensive documentation and analysis. It solves a common problem: teams often struggle to maintain up-to-date documentation and fully understand their codebase, especially when onboarding new members or working with legacy code.
 
+```mermaid
+graph TD
+    A[Codebase] --> B[Tech Writer Agent]
+    C[Prompt] --> B
+    B --> D[Analysis]
+    D --> E[Documentation]
+    E --> F[Team Understanding]
+    
+    subgraph "Agent Capabilities"
+        B --> G[Explore Code]
+        B --> H[Generate Docs]
+        B --> I[Adapt Analysis]
+    end
+```
+
 The agent:
 1. Takes a codebase and a specific prompt (e.g., "Create a new starter guide")
 2. Explores the codebase systematically
@@ -15,18 +30,59 @@ The agent:
 The key to this code's agentic nature is its ability to:
 1. **Make Autonomous Decisions**: The agent decides which tools to use and when to stop
 2. **Maintain State**: It keeps track of what it has learned through its "memory" of interactions
-3. **Iterative Learning**: Each tool use informs the next decision
-4. **Goal-Oriented**: It continues until it has gathered enough information to answer the prompt
+3. **Goal-Oriented**: It continues until it has gathered enough information to answer the prompt
+
+```mermaid
+graph LR
+    A[Agent] --> B[Autonomous Decisions]
+    A --> C[State Management]
+    A --> D[Goal Orientation]
+    
+    B --> F[Choose Tools]
+    B --> G[Decide When to Stop]
+    
+    C --> H[Track Memory]
+    C --> I[Maintain Context]
+    
+    D --> L[Complete Task]
+    D --> M[Meet Requirements]
+```
 
 Unlike traditional static analysis tools, this agent can:
 - Choose which files to examine
 - Decide when it has enough information
-- Adapt its approach based on what it finds
 - Generate human-readable explanations
+
+The agent follows a linear ReAct pattern where each tool use informs the next decision, but it doesn't learn or adapt its behavior between runs. Each execution starts fresh with the same capabilities.
 
 ## Core Flow: The ReAct Pattern
 
 The agent follows the ReAct (Reasoning and Acting) pattern:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Agent
+    participant LLM
+    participant Tools
+    
+    User->>Agent: Provide Prompt & Codebase
+    Agent->>LLM: Initialize with System Prompts
+    
+    loop ReAct Cycle
+        LLM->>LLM: Thought: What to do next?
+        LLM->>Tools: Action: Use Tool
+        Tools-->>LLM: Observation: Tool Result
+        LLM->>LLM: Evaluate if Complete
+        alt Not Complete
+            LLM->>LLM: Continue Cycle
+        else Complete
+            LLM->>Agent: Generate Final Answer
+        end
+    end
+    
+    Agent->>User: Return Documentation
+```
 
 1. **Prompt Reception**
    - Receives a prompt and codebase location
@@ -53,6 +109,23 @@ The agent follows the ReAct (Reasoning and Acting) pattern:
 ## The Prompts
 
 The agent uses a layered prompt system:
+
+```mermaid
+graph TD
+    A[System Prompt] --> B[Role & Task]
+    A --> C[Analysis Guidelines]
+    A --> D[Input Processing]
+    A --> E[Code Analysis]
+    A --> F[ReAct Strategy]
+    A --> G[Quality Requirements]
+    
+    B --> H[Identity & Goals]
+    C --> I[Exploration Principles]
+    D --> J[Prompt Handling]
+    E --> K[Code Understanding]
+    F --> L[Iterative Process]
+    G --> M[Output Standards]
+```
 
 1. **Role and Task**
    - Defines the agent's identity as a tech writer
@@ -85,22 +158,147 @@ The agent uses a layered prompt system:
 
 ## The Tools
 
-The agent has three core tools:
+The agent has three core tools that enable systematic codebase exploration:
 
-1. **find_all_matching_files**
-   - Purpose: Discover relevant files in the codebase
-   - Usage: Find files by pattern, respecting .gitignore
-   - Example: Finding all Python files in a project
+```mermaid
+graph LR
+    A[Tools] --> B[find_all_matching_files]
+    A --> C[read_file]
+    A --> D[calculate]
+    
+    B --> E[File Discovery]
+    C --> F[Content Reading]
+    D --> G[Math Operations]
+    
+    E --> H[Pattern Matching]
+    E --> I[Gitignore Support]
+    E --> J[Recursive Search]
+    
+    F --> K[File Parsing]
+    F --> L[Content Analysis]
+    F --> M[Line Range Selection]
+    
+    G --> N[Metrics]
+    G --> O[Statistics]
+    G --> P[Code Analysis]
+```
 
-2. **read_file**
-   - Purpose: Examine file contents
-   - Usage: Read and parse file content
-   - Example: Reading package.json to understand dependencies
+### 1. find_all_matching_files
+**Purpose**: Discover relevant files in the codebase based on patterns and criteria
 
-3. **calculate**
-   - Purpose: Perform mathematical operations
-   - Usage: Analyze metrics and statistics
-   - Example: Calculating code complexity metrics
+**Parameters**:
+- `pattern`: Glob pattern to match files (e.g., "*.py", "src/**/*.ts")
+- `exclude_pattern`: Optional pattern to exclude files
+- `include_hidden`: Whether to include hidden files (default: false)
+- `recursive`: Whether to search subdirectories (default: true)
+
+**Features**:
+- Respects .gitignore rules
+- Supports recursive directory traversal
+- Handles both inclusion and exclusion patterns
+- Returns full file paths relative to workspace root
+
+**Example Usage**:
+```python
+# Find all Python files in src directory
+files = find_all_matching_files("src/**/*.py")
+
+# Find all TypeScript files excluding tests
+files = find_all_matching_files("*.ts", exclude_pattern="*test*.ts")
+
+# Find all configuration files
+files = find_all_matching_files("*.{json,yaml,yml,toml}")
+```
+
+### 2. read_file
+**Purpose**: Examine and parse file contents with flexible reading options
+
+**Parameters**:
+- `relative_workspace_path`: Path to file relative to workspace root
+- `should_read_entire_file`: Whether to read entire file (default: false)
+- `start_line_one_indexed`: Starting line number (1-indexed)
+- `end_line_one_indexed_inclusive`: Ending line number (inclusive)
+
+**Features**:
+- Line range selection for partial file reading
+- Handles various file encodings
+- Provides context around selected lines
+- Returns both content and metadata
+
+**Example Usage**:
+```python
+# Read entire file
+content = read_file("package.json", should_read_entire_file=True)
+
+# Read specific line range
+content = read_file("src/main.py", start_line_one_indexed=10, end_line_one_indexed_inclusive=20)
+
+# Read with context
+content = read_file("config.yaml", start_line_one_indexed=5, end_line_one_indexed_inclusive=15)
+```
+
+### 3. calculate
+**Purpose**: Perform mathematical operations and code analysis calculations
+
+**Parameters**:
+- `expression`: Mathematical expression to evaluate
+- `variables`: Optional dictionary of variables for expression
+
+**Features**:
+- Basic arithmetic operations
+- Statistical calculations
+- Code complexity metrics
+- Custom formula evaluation
+
+**Example Usage**:
+```python
+# Basic arithmetic
+result = calculate("2 + 2 * 4")
+
+# Statistical analysis
+result = calculate("mean([1, 2, 3, 4, 5])")
+
+# Code metrics
+result = calculate("complexity_score(lines_of_code, cyclomatic_complexity)")
+
+# Custom formula with variables
+result = calculate("(a + b) * c", variables={"a": 5, "b": 3, "c": 2})
+```
+
+### Tool Usage Patterns
+
+The agent combines these tools in various ways:
+
+1. **Broad to Narrow Search**
+   ```
+   find_all_matching_files → read_file → calculate
+   ```
+   - First finds relevant files
+   - Then examines specific files in detail
+   - Finally calculates metrics or statistics
+
+2. **Pattern-Based Analysis**
+   ```
+   find_all_matching_files → read_file → find_all_matching_files
+   ```
+   - Finds files matching initial pattern
+   - Reads them to discover related patterns
+   - Searches for files matching new patterns
+
+3. **Metric Collection**
+   ```
+   find_all_matching_files → read_file → calculate → read_file
+   ```
+   - Finds files to analyze
+   - Reads their contents
+   - Calculates metrics
+   - Reads more files for context
+
+Each tool is designed to be:
+- **Deterministic**: Same inputs produce same outputs
+- **Stateless**: No side effects between calls
+- **Composable**: Can be combined in various ways
+- **Focused**: Each tool has a single responsibility
 
 ## The Language Model
 
@@ -110,6 +308,25 @@ The agent uses OpenAI's GPT-4 model because it:
 3. Maintains context across multiple interactions
 4. Can follow complex instructions precisely
 
+```mermaid
+graph TD
+    A[GPT-4 Model] --> B[Technical Understanding]
+    A --> C[Structured Output]
+    A --> D[Context Management]
+    A --> E[Instruction Following]
+    
+    B --> F[Code Analysis]
+    C --> G[Documentation]
+    D --> H[Conversation History]
+    E --> I[Tool Usage]
+    
+    subgraph "Model Settings"
+        J[Temperature: 0]
+        K[Function Calling]
+        L[Context Window]
+    end
+```
+
 Key model settings:
 - Temperature: 0 (deterministic output)
 - Tools: Function calling enabled
@@ -118,6 +335,26 @@ Key model settings:
 ## The Magic Sauce: ReAct with Tool Calling
 
 What makes this approach powerful:
+
+```mermaid
+graph TD
+    A[ReAct + Tool Calling] --> B[Self-Directed Exploration]
+    A --> C[Contextual Learning]
+    A --> D[Evidence-Based Output]
+    A --> E[Flexible Application]
+    
+    B --> F[Autonomous Decisions]
+    B --> G[Adaptive Strategy]
+    
+    C --> H[State Management]
+    C --> I[Progressive Understanding]
+    
+    D --> J[Code Evidence]
+    D --> K[Verifiable Claims]
+    
+    E --> L[Universal Application]
+    E --> M[Customizable Output]
+```
 
 1. **Self-Directed Exploration**
    - Agent decides what to look at
@@ -140,6 +377,30 @@ What makes this approach powerful:
    - Generates various types of documentation
 
 ## Example Prompts
+
+```mermaid
+graph TD
+    A[Example Prompts] --> B[Architecture Analysis]
+    A --> C[New Starter Guide]
+    A --> D[Test Coverage]
+    A --> E[Security Review]
+    
+    B --> F[Components]
+    B --> G[Data Flow]
+    B --> H[Design Patterns]
+    
+    C --> I[Setup]
+    C --> J[Concepts]
+    C --> K[Workflows]
+    
+    D --> L[Coverage]
+    D --> M[Quality]
+    D --> N[Patterns]
+    
+    E --> O[Auth]
+    E --> P[Data]
+    E --> Q[Vulnerabilities]
+```
 
 1. **Architecture Analysis**
    ```

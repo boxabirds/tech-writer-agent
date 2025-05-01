@@ -126,3 +126,66 @@ This chatbot uses LangGraph to create a state machine with:
 The model is accessed either through:
 - A local OpenAI-compatible API endpoint (e.g., Ollama at http://gruntus:11434/v1)
 - The official OpenAI API
+
+---
+
+## Tech Writer Agent (OpenRouter Version)
+
+A standalone codebase analysis agent that uses OpenRouter's API for LLM calls, supporting model/cost benchmarking and quantitative comparison. This version is fully independent (no shared code with other agents) and preserves UK English spelling and naming conventions.
+
+### Design Decisions
+- **Standalone Implementation**: No shared code with the original agent, ensuring full independence for benchmarking and reproducibility.
+- **OpenRouter API**: Uses OpenRouter's OpenAI-compatible API endpoints (https://openrouter.ai/docs) with the API key in the `Authorization: Bearer ...` header.
+- **Model Support**: Supports OpenRouter equivalents of OpenAI and Google models (e.g., `openai/gpt-4o`, `google/gemini-pro`).
+- **Cost Reporting**: Fetches pricing from OpenRouter's `/pricing` endpoint, reporting both token usage and actual cost for each run.
+- **Benchmarking**: Includes a dedicated test script to benchmark performance, token usage, and cost across models.
+- **No Shared Logic**: All logic is implemented within `tech-writer-from-scratch-openrouter.py` for strict reproducibility and isolation.
+
+### Installation & Prerequisites
+- Python 3.8+
+- `uv` for package management
+- OpenRouter API key (set as `OPENROUTER_API_KEY`)
+
+### Usage
+
+```bash
+# Run the OpenRouter agent
+python tech-writer-from-scratch-openrouter.py <directory> <prompt_file> --model <openrouter_model_name>
+
+# Example:
+python tech-writer-from-scratch-openrouter.py test-data/test-tools test-data/prompts/count-python-files.prompt.txt --model openai/gpt-4o
+```
+
+### Benchmarking
+
+A test script `test_openrouter_agent.py` is provided to benchmark the agent across models:
+
+```bash
+python test_openrouter_agent.py
+```
+
+This will run the agent on sample prompts and directories, recording runtime, token usage, and cost, and output a summary table for comparison.
+
+### Example Output
+
+```
+Model: openai/gpt-4o | Directory: test-data/test-tools | Prompt: test-data/prompts/count-python-files.prompt.txt
+  Tokens: 1234 | Cost: $0.004321 | Runtime: 12.45s | Success: True
+
+Summary Table:
+Model                Tokens   Cost (USD)   Runtime (s)   Success
+---------------------------------------------------------------
+openai/gpt-4o         1234      0.004321        12.45     True
+... (other models)
+```
+
+### Rationale
+- **Cost Transparency**: OpenRouter exposes pricing information, allowing for actual cost calculation and quantitative comparison between models.
+- **Model Diversity**: Supports a wide range of models from multiple providers via a single API.
+- **Reproducibility**: Standalone implementation ensures results are not affected by changes in other agent versions.
+
+### Caveats
+- Ensure your OpenRouter API key is set as `OPENROUTER_API_KEY`.
+- Model names and pricing may change; always verify with the latest OpenRouter documentation.
+
+---

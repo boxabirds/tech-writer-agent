@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["DEFAULT_RETRY"],"struct":["Constant","ExponentialBackoff","Never"],"trait":["RetryPolicy"]};

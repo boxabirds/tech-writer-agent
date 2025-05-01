@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Code Analysis Visualization</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; background-color: #111; color: #eee; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.75);
+            padding: 15px;
+            border-radius: 5px;
+            max-width: 350px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        #info h2 { margin-top: 0; }
+        #status-line { margin-top: 10px; font-weight: bold; }
+        #legend { margin-top: 15px; border-top: 1px solid #555; padding-top: 10px; }
+        #legend h3 { margin: 0 0 5px 0; font-size: 1em; }
+        #legend ul { list-style: none; padding: 0; margin: 0; }
+        #legend li { margin-bottom: 4px; display: flex; align-items: center; }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            margin-right: 8px;
+            border: 1px solid #888;
+            display: inline-block;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        button {
+            margin: 5px;
+            padding: 8px 12px;
+            cursor: pointer;
+            background-color: #444;
+            color: #eee;
+            border: 1px solid #666;
+            border-radius: 3px;
+        }
+        button:hover { background-color: #555; }
+        button:disabled { background-color: #333; color: #888; cursor: not-allowed; }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(50, 50, 50, 0.9);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 11px;
+            white-space: pre-wrap;
+            pointer-events: none;
+            display: none;
+            max-width: 400px;
+            border: 1px solid #777;
+            z-index: 100;
+        }
+        #labels-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .object-label {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            white-space: nowrap;
+            transform: translateX(-50%);
+            user-select: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h2>Code Analysis Flow (ReAct)</h2>
+        <p>Visualizing the interaction between Prompts, LLM, and Tools, including memory accumulation.</p>
+        <div id="status-line"><strong>Current Step:</strong> <span id="status">Idle</span></div>
+        <p>Use mouse to rotate/zoom. Hover for details. Click buttons below to step through.</p>
+        <div id="legend">
+            <h3>Legend</h3>
+            <ul>
+                <li><span class="legend-color" style="background-color: #0077cc;"></span>LLM Core</li>
+                <li><span class="legend-color" style="background-color: #cc0000;"></span>System Prompt</li>
+                <li><span class="legend-color" style="background-color: #ff6666;"></span>Sub-Prompt Component</li>
+                <li><span class="legend-color" style="background-color: #00cc00;"></span>User Prompt</li>
+                <li><span class="legend-color" style="background-color: #ffaa00;"></span>Tool</li>
+                <li><span class="legend-color" style="background-color: #ffff00;"></span>Signal (Info Flow)</li>
+                <li><span class="legend-color" style="background-color: #cc00cc;"></span>Final Answer</li>
+                <li><span class="legend-color" style="background-color: #aaaaaa; height: 2px; border: none; width: 15px; vertical-align: middle;"></span>Connection</li>
+                <li><span class="legend-color" style="background-color: #6c757d;"></span>Memory Block</li>
+            </ul>
+        </div>
+    </div>
+    <div id="controls">
+        <button id="startButton">Start Analysis</button>
+        <button id="nextStepButton" disabled>Next Step (Simulated)</button>
+        <button id="resetButton">Reset</button>
+    </div>
+    <div id="tooltip" class="tooltip">Tooltip</div>
+    <div id="labels-container"></div>
+
+    <!-- Load Matter.js globally BEFORE the module script -->
+    <script src="https://unpkg.com/matter-js@0.19.0/build/matter.js"></script>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Configuration ---
+        const Colors = {
+            background: 0x111111,
+            ambientLight: 0x404040,
+            directionalLight: 0xffffff,
+            llm: 0x0077cc, // Blue
+            systemPrompt: 0xcc0000, // Red
+            subPrompt: 0xff6666, // Lighter Red
+            userPrompt: 0x00cc00, // Green
+            tool: 0xffaa00, // Orange
+            connection: 0xaaaaaa,
+            signal: 0xffff00, // Yellow
+            finalAnswer: 0xcc00cc, // Purple
+            memory: 0x6c757d, // Grey for memory blocks
+        };
+
+        const Sizes = {
+            llmRadius: 30,
+            promptSize: 15,
+            subPromptSize: 8,
+            toolSize: 20,
+            signalRadius: 3,
+            labelOffset: 1.2,
+            memoryBlockWidth: 5,
+            memoryBlockHeight: 10,
+            memoryBlockDepth: 2,
+            memoryStackOffset: 5, // Distance between memory blocks
+            memoryStackXOffset: 45, // Horizontal offset from LLM center
+        };
+
+        // --- Data (Ensure this is complete) ---
+        const PromptData = {
+            ROLE_AND_TASK: "Expert tech writer role, analyze codebase task.",
+            GENERAL_ANALYSIS_GUIDELINES: "Use tools, be accurate, structured, cite sources.",
+            INPUT_PROCESSING_GUIDELINES: "Use base directory, handle errors, structured summaries.",
+            CODE_ANALYSIS_STRATEGIES: "Explore structure, identify key files, ignore temp files, analyze relationships.",
+            REACT_PLANNING_STRATEGY: "ReAct Pattern: Thought -> Action -> Observation -> Repeat.",
+            QUALITY_REQUIREMENTS: "MECE analysis, thorough, accurate, helpful Markdown output.",
+            USER_PROMPT_EXAMPLE: "Base directory: /path/to/codebase\n\nAnalyze the main application logic and dependencies."
+        };
+
+        const ToolData = {
+            find_all_matching_files: "Finds files matching a pattern, respects .gitignore.",
+            read_file: "Reads the content of a non-binary file.",
+            calculate: "Evaluates a safe mathematical expression."
+        };
+
+        // --- Global Variables ---
+        let scene, camera, renderer, controls;
+        let engine, world;
+        let objects = {
+            llm: null,
+            systemPrompt: null,
+            subPrompts: [],
+            userPrompt: null,
+            tools: {},
+            connections: [],
+            signals: [],
+            finalAnswerObj: null
+        };
+        let matterBodies = [];
+        let threeMeshes = [];
+        let labeledObjects = [];
+        let constraints = [];
+        let memoryItems = [];
+        let simulationState = 'idle';
+        let currentStep = 0;
+        const maxSteps = 10;
+        let currentTool = null;
+        let tooltipElement, statusElement, labelsContainer;
+        let raycaster, mouse;
+        const labelUpdateVector = new THREE.Vector3();
+        let memoryBlockGeometry; // Define later after THREE is loaded
+        let memoryBlockMaterial; // Define later after THREE is loaded
+
+        // --- Initialization ---
+        function init() {
+            console.log("Initializing visualization..."); // Log start
+            tooltipElement = document.getElementById('tooltip');
+            statusElement = document.getElementById('status');
+            labelsContainer = document.getElementById('labels-container');
+
+            // Define geometries/materials that depend on THREE here
+            memoryBlockGeometry = new THREE.BoxGeometry(Sizes.memoryBlockWidth, Sizes.memoryBlockHeight, Sizes.memoryBlockDepth);
+            memoryBlockMaterial = new THREE.MeshStandardMaterial({ color: Colors.memory, roughness: 0.8, metalness: 0.1 });
+
+            setupThreeJS();
+            setupMatterJS();
+            setupSceneContent(); // This is where the error likely occurs
+            setupInteraction();
+            animate();
+            updateStatus('Idle. Press "Start Analysis".');
+            console.log("Initialization complete."); // Log end
+        }
+
+        // --- Setup Functions ---
+        function setupThreeJS() {
+            console.log("Setting up Three.js...");
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(Colors.background);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 0, 250);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(Colors.ambientLight));
+            const dirLight = new THREE.DirectionalLight(Colors.directionalLight, 1.5);
+            dirLight.position.set(50, 50, 100);
+            scene.add(dirLight);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.1;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 50;
+            controls.maxDistance = 800;
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            window.addEventListener('mousemove', onMouseMove, false);
+            window.addEventListener('resize', onWindowResize, false);
+            console.log("Three.js setup complete.");
+        }
+
+        function setupMatterJS() {
+            console.log("Setting up Matter.js...");
+            if (typeof Matter === 'undefined') {
+                 console.error("FATAL: Matter.js global object not found!");
+                 alert("Error: Matter.js library failed to load.");
+                 return;
+            }
+            engine = Matter.Engine.create();
+            world = engine.world;
+            world.gravity.y = 0;
+            console.log("Matter.js setup complete.");
+        }
+
+        function setupSceneContent() {
+            console.log("Setting up scene content...");
+            try { // Add try...catch for better error isolation
+                // --- LLM Core ---
+                console.log("Creating LLM Core...");
+                const llmPos = { x: 0, y: 0 };
+                const llmBody = Matter.Bodies.circle(llmPos.x, llmPos.y, Sizes.llmRadius, { isStatic: true, label: 'LLM Core', restitution: 0.5 });
+                const llmMesh = createMesh(new THREE.SphereGeometry(Sizes.llmRadius, 32, 32), Colors.llm, llmPos.x, llmPos.y, 0);
+                if (!llmMesh) throw new Error("Failed to create LLM mesh."); // Check return
+                llmMesh.userData = { info: "Language Model (e.g., GPT-4o-mini)\nProcesses prompts and orchestrates tool use.", body: llmBody };
+                objects.llm = { mesh: llmMesh, body: llmBody };
+                addObject(llmMesh, llmBody);
+                addLabel(llmMesh, "LLM Core", Sizes.llmRadius);
+
+                // --- System Prompt & Sub-Prompts ---
+                console.log("Creating System Prompt...");
+                const sysPromptPos = { x: -150, y: 80 };
+                const sysPromptBody = Matter.Bodies.rectangle(sysPromptPos.x, sysPromptPos.y, Sizes.promptSize * 1.5, Sizes.promptSize * 1.5, { isStatic: true, label: 'System Prompt', restitution: 0.5 });
+                const sysPromptMesh = createMesh(new THREE.BoxGeometry(Sizes.promptSize, Sizes.promptSize, Sizes.promptSize), Colors.systemPrompt, sysPromptPos.x, sysPromptPos.y, 0);
+                if (!sysPromptMesh) throw new Error("Failed to create System Prompt mesh."); // Check return
+                // Check PromptData before using it
+                if (!PromptData || typeof PromptData !== 'object') throw new Error("PromptData object is missing or invalid.");
+                const sysPromptInfo = "System Prompt:\n" + Object.values(PromptData).slice(0, -1).join("\n- ");
+                sysPromptMesh.userData = { info: sysPromptInfo, body: sysPromptBody };
+                objects.systemPrompt = { mesh: sysPromptMesh, body: sysPromptBody };
+                addObject(sysPromptMesh, sysPromptBody);
+                addLabel(sysPromptMesh, "System Prompt", Sizes.promptSize);
+                addConnection(objects.llm, objects.systemPrompt);
+
+                console.log("Creating Sub-Prompts...");
+                const subPromptNames = Object.keys(PromptData).slice(0, -1);
+                const angleStepSub = (Math.PI * 2) / subPromptNames.length;
+                subPromptNames.forEach((name, i) => {
+                    const angle = angleStepSub * i + Math.PI / 4;
+                    const radius = Sizes.promptSize * 2.5;
+                    const pos = { x: sysPromptPos.x + radius * Math.cos(angle), y: sysPromptPos.y + radius * Math.sin(angle) };
+                    const body = Matter.Bodies.rectangle(pos.x, pos.y, Sizes.subPromptSize * 1.5, Sizes.subPromptSize * 1.5, { isStatic: true, label: `Sub-Prompt: ${name}`, restitution: 0.5 });
+                    const mesh = createMesh(new THREE.BoxGeometry(Sizes.subPromptSize, Sizes.subPromptSize, Sizes.subPromptSize), Colors.subPrompt, pos.x, pos.y, 0);
+                    if (!mesh) throw new Error(`Failed to create Sub-Prompt mesh for ${name}.`); // Check return
+                    if (!PromptData[name]) console.warn(`PromptData missing key: ${name}`); // Warn if key missing
+                    mesh.userData = { info: `Sub-Prompt: ${name}\n${PromptData[name] || 'Info missing'}`, body: body };
+                    const subPromptObj = { mesh: mesh, body: body, name: name };
+                    objects.subPrompts.push(subPromptObj);
+                    addObject(mesh, body);
+                    addConnection(objects.systemPrompt, subPromptObj, 0.1);
+                });
+
+                // --- User Prompt ---
+                console.log("Creating User Prompt...");
+                const userPromptPos = { x: -150, y: -80 };
+                const userPromptBody = Matter.Bodies.rectangle(userPromptPos.x, userPromptPos.y, Sizes.promptSize * 1.5, Sizes.promptSize * 1.5, { isStatic: false, label: 'User Prompt', restitution: 0.5, frictionAir: 0.05 });
+                const userPromptMesh = createMesh(new THREE.BoxGeometry(Sizes.promptSize, Sizes.promptSize, Sizes.promptSize), Colors.userPrompt, userPromptPos.x, userPromptPos.y, 0);
+
+                // **** CRITICAL CHECK ****
+                if (!userPromptMesh) {
+                    console.error("FATAL: createMesh returned undefined for User Prompt!");
+                    throw new Error("Failed to create User Prompt mesh object.");
+                }
+                console.log("User Prompt mesh created successfully:", userPromptMesh);
+
+                // Check PromptData.USER_PROMPT_EXAMPLE specifically
+                if (typeof PromptData.USER_PROMPT_EXAMPLE === 'undefined') {
+                     console.warn("PromptData.USER_PROMPT_EXAMPLE is undefined!");
+                }
+                // The problematic line:
+                userPromptMesh.userData = { info: `User Prompt (Example):\n${PromptData.USER_PROMPT_EXAMPLE || 'Example missing'}`, body: userPromptBody };
+                console.log("Set userData for User Prompt.");
+
+                objects.userPrompt = { mesh: userPromptMesh, body: userPromptBody };
+                addObject(userPromptMesh, userPromptBody);
+                addLabel(userPromptMesh, "User Prompt", Sizes.promptSize);
+                console.log("User Prompt added to scene.");
+
+                // --- Tools (Clustered on the Right) ---
+                console.log("Creating Tools...");
+                if (!ToolData || typeof ToolData !== 'object') throw new Error("ToolData object is missing or invalid.");
+                const toolNames = Object.keys(ToolData);
+                const numTools = toolNames.length;
+                const toolClusterRadius = 150;
+                const clusterStartAngle = -Math.PI / 2.5;
+                const clusterEndAngle = Math.PI / 2.5;
+                const totalClusterAngle = clusterEndAngle - clusterStartAngle;
+                const toolAngleStep = numTools > 1 ? totalClusterAngle / (numTools - 1) : 0;
+
+                toolNames.forEach((name, i) => {
+                    const angle = clusterStartAngle + (toolAngleStep * i);
+                    const pos = { x: llmPos.x + toolClusterRadius * Math.cos(angle), y: llmPos.y + toolClusterRadius * Math.sin(angle) };
+                    const body = Matter.Bodies.rectangle(pos.x, pos.y, Sizes.toolSize * 1.5, Sizes.toolSize * 1.5, { isStatic: true, label: `Tool: ${name}`, restitution: 0.5 });
+                    let geometry;
+                    if (i % 3 === 0) geometry = new THREE.BoxGeometry(Sizes.toolSize, Sizes.toolSize, Sizes.toolSize);
+                    else if (i % 3 === 1) geometry = new THREE.CylinderGeometry(Sizes.toolSize * 0.7, Sizes.toolSize * 0.7, Sizes.toolSize, 16);
+                    else geometry = new THREE.ConeGeometry(Sizes.toolSize * 0.8, Sizes.toolSize * 1.2, 16);
+
+                    const mesh = createMesh(geometry, Colors.tool, pos.x, pos.y, 0);
+                    if (!mesh) throw new Error(`Failed to create Tool mesh for ${name}.`); // Check return
+                    if (!ToolData[name]) console.warn(`ToolData missing key: ${name}`); // Warn if key missing
+                    mesh.userData = { info: `Tool: ${name}\n${ToolData[name] || 'Info missing'}`, body: body };
+                    const toolObj = { mesh: mesh, body: body, name: name };
+                    objects.tools[name] = toolObj;
+                    addObject(mesh, body);
+                    addLabel(mesh, `Tool: ${name}`, Sizes.toolSize);
+                    addConnection(objects.llm, toolObj);
+                });
+                console.log("Tools created.");
+
+            } catch (error) {
+                console.error("Error during setupSceneContent:", error);
+                alert(`An error occurred during scene setup: ${error.message}\nCheck the console for details.`);
+                // Optionally, halt further execution or display an error message on the page
+            }
+            console.log("Scene content setup complete.");
+        }
+
+        // --- Helper Functions ---
+        function createMesh(geometry, color, x, y, z) {
+            try {
+                const material = new THREE.MeshStandardMaterial({
+                    color: color,
+                    roughness: 0.5,
+                    metalness: 0.2,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(x, y, z);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                return mesh;
+            } catch (error) {
+                console.error("Error in createMesh:", error);
+                return undefined; // Explicitly return undefined on error
+            }
+        }
+
+        function addObject(mesh, body) {
+            if (!mesh || !body) {
+                console.error("Attempted to add invalid mesh or body:", mesh, body);
+                return;
+            }
+            scene.add(mesh);
+            Matter.World.add(world, body);
+            matterBodies.push(body);
+            threeMeshes.push(mesh);
+        }
+
+        function addLabel(mesh, text, objectSize) {
+             if (!mesh) {
+                console.error("Attempted to add label to invalid mesh for text:", text);
+                return;
+            }
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'object-label';
+            labelDiv.textContent = text;
+            labelsContainer.appendChild(labelDiv);
+            labeledObjects.push({ mesh, labelElement: labelDiv, text, size: objectSize });
+        }
+
+        function updateLabels() {
+            labeledObjects.forEach(item => {
+                if (!item || !item.mesh || !item.labelElement) return; // Add safety check
+
+                const offsetDistance = item.size * Sizes.labelOffset;
+                labelUpdateVector.set(item.mesh.position.x, item.mesh.position.y + offsetDistance, item.mesh.position.z);
+                labelUpdateVector.project(camera);
+
+                const isBehindCamera = labelUpdateVector.z > 1;
+                const x = (labelUpdateVector.x * 0.5 + 0.5) * renderer.domElement.clientWidth;
+                const y = (-labelUpdateVector.y * 0.5 + 0.5) * renderer.domElement.clientHeight;
+
+                item.labelElement.style.left = `${x}px`;
+                item.labelElement.style.top = `${y}px`;
+
+                 if (isBehindCamera || x < -100 || x > renderer.domElement.clientWidth + 100 || y < -100 || y > renderer.domElement.clientHeight + 100) {
+                     item.labelElement.style.display = 'none';
+                 } else {
+                     item.labelElement.style.display = 'block';
+                 }
+            });
+        }
+
+        function addConnection(objA, objB, stiffness = 0.01, length = null) {
+            if (!objA || !objB || !objA.body || !objB.body || !objA.mesh || !objB.mesh) { // Added mesh check
+                 console.error("Attempted to add connection between invalid objects:", objA, objB);
+                 return;
+            }
+            const bodyA = objA.body;
+            const bodyB = objB.body;
+            if (!length) {
+                 length = Math.hypot(bodyA.position.x - bodyB.position.x, bodyA.position.y - bodyB.position.y);
+            }
+            const constraint = Matter.Constraint.create({ bodyA, bodyB, stiffness, length, render: { visible: false } });
+            Matter.World.add(world, constraint);
+            constraints.push(constraint);
+
+            const points = [ new THREE.Vector3(), new THREE.Vector3() ];
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: Colors.connection, transparent: true, opacity: 0.5 });
+            const line = new THREE.Line(geometry, material);
+            line.userData.constraint = constraint;
+            scene.add(line);
+            objects.connections.push(line);
+        }
+
+        function setupInteraction() {
+            document.getElementById('startButton').addEventListener('click', startAnalysis);
+            document.getElementById('nextStepButton').addEventListener('click', nextStep);
+            document.getElementById('resetButton').addEventListener('click', resetSimulation);
+        }
+
+        // --- Memory Visualization ---
+        function addMemoryItem() {
+            if (!objects.llm || !objects.llm.body) {
+                 console.error("Cannot add memory item: LLM object not ready.");
+                 return;
+            }
+            const llmPos = objects.llm.body.position;
+            const stackHeight = memoryItems.length * (Sizes.memoryBlockHeight + Sizes.memoryStackOffset);
+
+            // Ensure geometry and material are defined
+             if (!memoryBlockGeometry || !memoryBlockMaterial) {
+                 console.error("Memory block geometry or material not initialized!");
+                 return;
+             }
+
+            const memMesh = new THREE.Mesh(memoryBlockGeometry, memoryBlockMaterial);
+            memMesh.position.set(
+                llmPos.x + Sizes.memoryStackXOffset,
+                llmPos.y - Sizes.llmRadius + Sizes.memoryBlockHeight / 2 + stackHeight,
+                0
+            );
+            memMesh.castShadow = true;
+            memMesh.receiveShadow = true;
+
+            scene.add(memMesh);
+            memoryItems.push(memMesh);
+
+            memMesh.scale.set(0.1, 0.1, 0.1);
+            const targetScale = 1.0;
+            const growDuration = 300;
+            const startTime = Date.now();
+            function animateGrowth() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / growDuration, 1);
+                const scale = 0.1 + progress * (targetScale - 0.1);
+                if (memoryItems.includes(memMesh)) {
+                     memMesh.scale.set(scale, scale, scale);
+                     if (progress < 1) {
+                         requestAnimationFrame(animateGrowth);
+                     }
+                }
+            }
+            animateGrowth();
+        }
+
+        // --- Simulation Logic ---
+        function startAnalysis() {
+            if (simulationState !== 'idle') return;
+            console.log("Starting analysis simulation...");
+            resetSimulationVisuals();
+            simulationState = 'user_prompt_to_llm';
+            currentStep = 0;
+            updateStatus('User Prompt -> LLM: Sending Initial Request');
+            document.getElementById('startButton').disabled = true;
+            document.getElementById('nextStepButton').disabled = false;
+
+            addMemoryItem(); // System Prompt
+            addMemoryItem(); // User Prompt
+
+            if (!objects.userPrompt || !objects.userPrompt.body || !objects.llm || !objects.llm.body) {
+                 console.error("Cannot start analysis: User Prompt or LLM objects not ready.");
+                 endSimulation("Error: Core objects missing.");
+                 return;
+            }
+            const userPromptBody = objects.userPrompt.body;
+            const llmBody = objects.llm.body;
+            Matter.Body.setStatic(userPromptBody, false);
+            const forceMagnitude = 0.005 * userPromptBody.mass;
+            const angle = Math.atan2(llmBody.position.y - userPromptBody.position.y, llmBody.position.x - userPromptBody.position.x);
+            Matter.Body.applyForce(userPromptBody, userPromptBody.position, { x: forceMagnitude * Math.cos(angle), y: forceMagnitude * Math.sin(angle) });
+
+            createSignal(objects.userPrompt, objects.llm, 2000, () => {
+                 if (simulationState === 'user_prompt_to_llm') {
+                    simulationState = 'llm_thinking';
+                    updateStatus('LLM: Processing Request (Thought)');
+                    flashObject(objects.llm.mesh, 3, 500);
+                 }
+            });
+        }
+
+        function nextStep() {
+            if (simulationState === 'idle' || currentStep >= maxSteps) {
+                 endSimulation("Max steps reached or idle.");
+                 return;
+            }
+            if (!objects.llm || !objects.llm.mesh) {
+                 console.error("Cannot proceed: LLM object not ready.");
+                 endSimulation("Error: LLM object missing.");
+                 return;
+            }
+
+            currentStep++;
+            console.log(`Step ${currentStep}, State: ${simulationState}`);
+
+            switch (simulationState) {
+                case 'llm_thinking':
+                case 'tool_to_llm':
+                    const toolNames = Object.keys(objects.tools);
+                    if (toolNames.length === 0) {
+                         console.warn("No tools available to call.");
+                         simulationState = 'final_answer'; // Skip to final answer if no tools
+                         updateStatus('LLM: No tools available, generating Final Answer...');
+                         flashObject(objects.llm.mesh, 5, 400);
+                         createFinalAnswer();
+                         addMemoryItem(); // Final answer memory
+                         setTimeout(() => endSimulation("Analysis Complete (No Tools)."), 2000);
+                         break;
+                    }
+                    currentTool = toolNames[Math.floor(Math.random() * toolNames.length)];
+                    if (!objects.tools[currentTool] || !objects.tools[currentTool].mesh) {
+                         console.error(`Selected tool '${currentTool}' is invalid or missing mesh.`);
+                         // Maybe try selecting another tool or error out
+                         endSimulation(`Error: Invalid tool selected: ${currentTool}`);
+                         break;
+                    }
+                    simulationState = 'llm_to_tool';
+                    updateStatus(`LLM -> Tool: Requesting '${currentTool}' (Action)`);
+                    flashObject(objects.llm.mesh);
+                    createSignal(objects.llm, objects.tools[currentTool], 1500, () => {
+                        if (simulationState === 'llm_to_tool') {
+                            simulationState = 'tool_processing';
+                            updateStatus(`Tool ('${currentTool}'): Executing...`);
+                            flashObject(objects.tools[currentTool].mesh, 3, 300);
+                            addMemoryItem(); // LLM action memory
+                        }
+                    });
+                    break;
+
+                case 'tool_processing':
+                    if (!currentTool || !objects.tools[currentTool] || !objects.tools[currentTool].mesh) {
+                        console.error("Cannot process tool result: Current tool is invalid.");
+                        simulationState = 'llm_thinking';
+                        updateStatus('LLM: Processing (Error Recovery)...');
+                        break;
+                    }
+                    simulationState = 'tool_to_llm';
+                    updateStatus(`Tool ('${currentTool}') -> LLM: Sending Result (Observation)`);
+                     flashObject(objects.tools[currentTool].mesh);
+                    createSignal(objects.tools[currentTool], objects.llm, 1500, () => {
+                         if (simulationState === 'tool_to_llm') {
+                            addMemoryItem(); // Tool observation memory
+                            if (currentStep >= maxSteps || Math.random() > 0.3) {
+                                simulationState = 'final_answer';
+                                updateStatus('LLM: Generating Final Answer...');
+                                flashObject(objects.llm.mesh, 5, 400);
+                                createFinalAnswer();
+                                addMemoryItem(); // Final answer memory
+                                setTimeout(() => endSimulation("Analysis Complete."), 2000);
+                            } else {
+                                simulationState = 'llm_thinking';
+                                updateStatus('LLM: Processing Observation (Thought)');
+                                flashObject(objects.llm.mesh, 3, 500);
+                            }
+                         }
+                    });
+                    currentTool = null;
+                    break;
+
+                default:
+                    console.log("Waiting for current animation to finish...");
+                    break;
+            }
+        }
+
+        function endSimulation(message) {
+            updateStatus(message);
+            simulationState = 'idle';
+            document.getElementById('startButton').disabled = false;
+            document.getElementById('nextStepButton').disabled = true;
+        }
+
+        function resetSimulation() {
+            console.log("Resetting simulation...");
+            resetSimulationVisuals();
+            if (objects.userPrompt && objects.userPrompt.body) {
+                const userPromptBody = objects.userPrompt.body;
+                Matter.Body.setStatic(userPromptBody, true);
+                Matter.Body.setPosition(userPromptBody, { x: -150, y: -80 });
+                Matter.Body.setVelocity(userPromptBody, { x: 0, y: 0 });
+                Matter.Body.setAngularVelocity(userPromptBody, 0);
+                Matter.Body.setStatic(userPromptBody, false);
+            } else {
+                 console.warn("Could not reset User Prompt position - object missing.");
+            }
+
+            endSimulation("Simulation Reset.");
+            currentStep = 0;
+            currentTool = null;
+        }
+
+        function resetSimulationVisuals() {
+            objects.signals.forEach(signal => scene.remove(signal.mesh));
+            objects.signals = [];
+            if (objects.finalAnswerObj) {
+                scene.remove(objects.finalAnswerObj.mesh);
+                if (objects.finalAnswerObj.labelElement) {
+                    labelsContainer.removeChild(objects.finalAnswerObj.labelElement);
+                }
+                objects.finalAnswerObj = null;
+                labeledObjects = labeledObjects.filter(item => item && item.text !== "Final Answer"); // Added item check
+            }
+            memoryItems.forEach(item => scene.remove(item));
+            memoryItems = [];
+
+            [objects.llm, objects.systemPrompt, objects.userPrompt, ...objects.subPrompts, ...Object.values(objects.tools)].forEach(obj => {
+                if (obj && obj.mesh && obj.mesh.material) { // Added material check
+                    obj.mesh.material.emissive.setHex(0x000000);
+                     obj.mesh.scale.set(1, 1, 1);
+                }
+            });
+             // Also remove labels associated with reset objects (except maybe LLM?)
+             // This is simpler than tracking which label belongs to which reset object
+             // labeledObjects.forEach(item => {
+             //     if (item && item.labelElement && item.text !== "LLM Core") { // Keep LLM label
+             //         labelsContainer.removeChild(item.labelElement);
+             //     }
+             // });
+             // labeledObjects = labeledObjects.filter(item => !item || item.text === "LLM Core"); // Keep only LLM label info
+             // Simpler: Just let updateLabels handle hiding them if the mesh is gone (though this leaves divs in DOM)
+        }
+
+
+        function createSignal(fromObj, toObj, duration, onComplete) {
+             if (!fromObj || !toObj || !fromObj.body || !toObj.body) {
+                 console.error("Cannot create signal: Invalid 'from' or 'to' object.", fromObj, toObj);
+                 return;
+             }
+            const startPos = new THREE.Vector3(fromObj.body.position.x, fromObj.body.position.y, 5);
+            const endPos = new THREE.Vector3(toObj.body.position.x, toObj.body.position.y, 5);
+
+            const signalGeom = new THREE.SphereGeometry(Sizes.signalRadius, 8, 8);
+            const signalMat = new THREE.MeshBasicMaterial({ color: Colors.signal });
+            const signalMesh = new THREE.Mesh(signalGeom, signalMat);
+            signalMesh.position.copy(startPos);
+            scene.add(signalMesh);
+
+            const signal = { mesh: signalMesh, startTime: Date.now(), duration, startPos, endPos, onComplete };
+            objects.signals.push(signal);
+        }
+
+         function createFinalAnswer() {
+            if (objects.finalAnswerObj) return;
+            if (!objects.llm || !objects.llm.body) {
+                 console.error("Cannot create final answer: LLM object not ready.");
+                 return;
+            }
+
+            const llmPos = objects.llm.body.position;
+            const answerPos = { x: llmPos.x + Sizes.llmRadius + 50, y: llmPos.y };
+
+            const geometry = new THREE.TorusKnotGeometry(15, 5, 100, 16);
+            const material = new THREE.MeshStandardMaterial({ color: Colors.finalAnswer, roughness: 0.3, metalness: 0.4, emissive: Colors.finalAnswer, emissiveIntensity: 0.5 });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(answerPos.x, answerPos.y, 0);
+            mesh.scale.set(0.1, 0.1, 0.1);
+            scene.add(mesh);
+
+            objects.finalAnswerObj = { mesh: mesh, startTime: Date.now() }; // Label added below
+            addLabel(mesh, "Final Answer", 20); // Add label AFTER object exists
+
+            const growDuration = 1000;
+            const targetScale = 1.0;
+            function animateGrowth() {
+                if (!objects.finalAnswerObj || !objects.finalAnswerObj.mesh) return; // Stop if reset
+                const elapsed = Date.now() - objects.finalAnswerObj.startTime;
+                const progress = Math.min(elapsed / growDuration, 1);
+                const scale = 0.1 + progress * (targetScale - 0.1);
+                objects.finalAnswerObj.mesh.scale.set(scale, scale, scale);
+                objects.finalAnswerObj.mesh.rotation.y += 0.02;
+                 objects.finalAnswerObj.mesh.rotation.x += 0.01;
+                if (progress < 1) {
+                    requestAnimationFrame(animateGrowth);
+                }
+            }
+            animateGrowth();
+        }
+
+        function flashObject(mesh, times = 1, duration = 200) {
+            if (!mesh || !mesh.material) { // Added material check
+                 console.warn("Attempted to flash invalid mesh:", mesh);
+                 return;
+            }
+            const originalEmissive = mesh.material.emissive.getHex();
+            const flashColor = 0xffffff;
+            let count = 0;
+
+            function doFlash() {
+                // Check again inside timeout in case mesh was removed
+                if (!mesh || !mesh.material) return;
+                if (count >= times * 2) {
+                    mesh.material.emissive.setHex(originalEmissive);
+                    mesh.material.emissiveIntensity = originalEmissive === 0 ? 0.0 : 0.5;
+                    return;
+                }
+                const isFlashOn = count % 2 === 0;
+                mesh.material.emissive.setHex(isFlashOn ? flashColor : originalEmissive);
+                mesh.material.emissiveIntensity = isFlashOn ? 1.0 : (originalEmissive === 0 ? 0.0 : 0.5);
+                count++;
+                setTimeout(doFlash, duration / 2);
+            }
+            doFlash();
+        }
+
+        function updateStatus(text) {
+            if (statusElement) {
+                statusElement.textContent = text;
+            }
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const now = Date.now();
+
+            // Update Physics Engine if it exists
+            if (engine) {
+                 Matter.Engine.update(engine, 1000 / 60);
+            }
+
+            // Sync Three.js meshes with Matter.js bodies
+            for (let i = 0; i < matterBodies.length; i++) {
+                const body = matterBodies[i];
+                const mesh = threeMeshes[i];
+                // Check if both exist before accessing properties
+                if (mesh && body && mesh.position) {
+                    mesh.position.set(body.position.x, body.position.y, mesh.position.z);
+                    mesh.rotation.z = body.angle;
+                }
+            }
+
+             // Update Connection Lines
+            objects.connections.forEach(line => {
+                if (!line || !line.userData || !line.userData.constraint) return; // Safety check
+                const constraint = line.userData.constraint;
+                if (!constraint.bodyA || !constraint.bodyB) return; // Safety check
+                const posA = constraint.bodyA.position;
+                const posB = constraint.bodyB.position;
+                // Check if geometry and attributes exist
+                if (line.geometry && line.geometry.attributes && line.geometry.attributes.position) {
+                    const positions = line.geometry.attributes.position.array;
+                    positions[0] = posA.x; positions[1] = posA.y; positions[2] = 0;
+                    positions[3] = posB.x; positions[4] = posB.y; positions[5] = 0;
+                    line.geometry.attributes.position.needsUpdate = true;
+                }
+            });
+
+            // Animate Signals
+            const signalsToRemove = [];
+            objects.signals.forEach((signal, index) => {
+                 if (!signal || !signal.mesh) return; // Safety check
+                const elapsed = now - signal.startTime;
+                const progress = Math.min(elapsed / signal.duration, 1);
+                signal.mesh.position.lerpVectors(signal.startPos, signal.endPos, progress);
+
+                if (progress >= 1) {
+                    scene.remove(signal.mesh);
+                    signalsToRemove.push(index);
+                    if (signal.onComplete) {
+                        try { // Add try-catch around callback
+                             signal.onComplete();
+                        } catch(e) { console.error("Error in signal onComplete callback:", e); }
+                    }
+                }
+            });
+            for (let i = signalsToRemove.length - 1; i >= 0; i--) {
+                objects.signals.splice(signalsToRemove[i], 1);
+            }
+
+             // Animate Final Answer
+            if (objects.finalAnswerObj && objects.finalAnswerObj.mesh) {
+                 const elapsed = Date.now() - objects.finalAnswerObj.startTime;
+                 if (elapsed > 1000) {
+                    objects.finalAnswerObj.mesh.rotation.y += 0.01;
+                    objects.finalAnswerObj.mesh.rotation.x += 0.005;
+                 }
+            }
+
+            // Update Controls and Labels if they exist
+            if (controls) controls.update();
+            if (camera && renderer) updateLabels();
+
+            // Render Scene if renderer and scene exist
+            if (renderer && scene && camera) {
+                 renderer.render(scene, camera);
+            }
+        }
+
+        // --- Event Handlers ---
+        function onWindowResize() {
+            if (camera && renderer) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        }
+
+        function onMouseMove(event) {
+             if (!raycaster || !camera || !mouse || !tooltipElement) return; // Safety check
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            // Ensure threeMeshes is an array before intersecting
+            const meshesToIntersect = Array.isArray(threeMeshes) ? threeMeshes : [];
+            const intersects = raycaster.intersectObjects(meshesToIntersect);
+
+            if (intersects.length > 0) {
+                const intersectedMesh = intersects[0].object;
+                if (intersectedMesh.userData && intersectedMesh.userData.info) {
+                    tooltipElement.style.display = 'block';
+                    tooltipElement.style.left = `${event.clientX + 15}px`;
+                    tooltipElement.style.top = `${event.clientY + 15}px`;
+                    tooltipElement.textContent = intersectedMesh.userData.info;
+                } else {
+                    tooltipElement.style.display = 'none';
+                }
+            } else {
+                tooltipElement.style.display = 'none';
+            }
+        }
+
+        // --- Start ---
+        // Wrap init in a DOMContentLoaded listener for safety
+        document.addEventListener('DOMContentLoaded', init);
+
+    </script>
+</body>
+</html>

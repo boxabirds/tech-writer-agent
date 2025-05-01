@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Error","FuncEvalError"],"fn":["eval_str","eval_str_with_context"],"mod":["shunting_yard","tokenizer"],"struct":["Context","Expr"],"trait":["ArgGuard","ContextProvider"]};

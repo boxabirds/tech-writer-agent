@@ -1,7 +1,0 @@
-/Users/julian/expts/tech-writer-agent/rust/target/debug/deps/libtokio_native_tls-9628114cbd34f4e3.rmeta: /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tokio-native-tls-0.3.1/src/lib.rs
-
-/Users/julian/expts/tech-writer-agent/rust/target/debug/deps/libtokio_native_tls-9628114cbd34f4e3.rlib: /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tokio-native-tls-0.3.1/src/lib.rs
-
-/Users/julian/expts/tech-writer-agent/rust/target/debug/deps/tokio_native_tls-9628114cbd34f4e3.d: /Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tokio-native-tls-0.3.1/src/lib.rs
-
-/Users/julian/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tokio-native-tls-0.3.1/src/lib.rs:

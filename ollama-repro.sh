@@ -21,6 +21,7 @@ test_model() {
     local top_k=1
     local stream=false
     local prompt="What's the capital of France"
+    local num_runs=7
     
     echo "=========================================="
     echo "Testing model: $model"
@@ -36,11 +37,6 @@ test_model() {
     # Command to run Ollama API with fixed parameters
     CMD='curl -s http://localhost:11434/api/generate -d "{\"model\": \"'"$model"'\", \"prompt\": \"What'\''s the capital of France\", \"seed\": '"$seed"', \"temperature\": '"$temperature"', \"top_k\": '"$top_k"', \"stream\": '"$stream"'}"'
     
-    # Temporary files to store outputs
-    OUTPUT1="output1_${model}.txt"
-    OUTPUT2="output2_${model}.txt"
-    OUTPUT3="output3_${model}.txt"
-    
     # Function to extract concatenated response from JSON stream
     extract_response() {
         local file=$1
@@ -48,33 +44,41 @@ test_model() {
         cat "$file" | jq -r '.response' | tr -d '\n' > "$file.parsed"
     }
     
-    # Run the command 3 times and save outputs
-    echo "Running command 1st time..."
-    eval "$CMD" > "$OUTPUT1"
-    echo "Running command 2nd time..."
-    eval "$CMD" > "$OUTPUT2"
-    echo "Running command 3rd time..."
-    eval "$CMD" > "$OUTPUT3"
+    # Run the command multiple times and save outputs
+    for i in $(seq 1 $num_runs); do
+        echo "Running command ${i}th time..."
+        eval "$CMD" > "output${i}_${model}.txt"
+    done
     
     # Extract the full text from each run
-    extract_response "$OUTPUT1"
-    extract_response "$OUTPUT2"
-    extract_response "$OUTPUT3"
+    for i in $(seq 1 $num_runs); do
+        extract_response "output${i}_${model}.txt"
+    done
     
-    # Compare the parsed outputs
+    # Compare all outputs
     echo "Comparing outputs..."
-    if diff "$OUTPUT1.parsed" "$OUTPUT2.parsed" > /dev/null && diff "$OUTPUT2.parsed" "$OUTPUT3.parsed" > /dev/null; then
-        echo "✅ Success: All three outputs are identical with the above configuration."
-        echo "Output: $(cat $OUTPUT1.parsed)"
+    all_identical=true
+    for i in $(seq 1 $((num_runs-1))); do
+        if ! diff "output${i}_${model}.txt.parsed" "output$((i+1))_${model}.txt.parsed" > /dev/null; then
+            all_identical=false
+            break
+        fi
+    done
+    
+    if [ "$all_identical" = true ]; then
+        echo "✅ Success: All $num_runs outputs are identical with the above configuration."
+        echo "Output: $(cat output1_${model}.txt.parsed)"
     else
         echo "❌ Failure: Outputs differ!"
-        echo "Run 1: $(cat $OUTPUT1.parsed)"
-        echo "Run 2: $(cat $OUTPUT2.parsed)"
-        echo "Run 3: $(cat $OUTPUT3.parsed)"
+        for i in $(seq 1 $num_runs); do
+            echo "Run $i: $(cat output${i}_${model}.txt.parsed)"
+        done
     fi
     
     # Clean up temporary files
-    rm -f "$OUTPUT1" "$OUTPUT2" "$OUTPUT3" "$OUTPUT1.parsed" "$OUTPUT2.parsed" "$OUTPUT3.parsed"
+    for i in $(seq 1 $num_runs); do
+        rm -f "output${i}_${model}.txt" "output${i}_${model}.txt.parsed"
+    done
     echo "=========================================="
     echo ""
 }

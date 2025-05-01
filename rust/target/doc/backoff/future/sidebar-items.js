@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["retry","retry_notify"],"struct":["Retry"],"trait":["Sleeper"]};

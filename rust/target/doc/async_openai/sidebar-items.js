@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["config","error","types"],"struct":["AssistantFiles","Assistants","Audio","Chat","Client","Completions","Edits","Embeddings","Files","FineTunes","FineTuning","Images","MessageFiles","Messages","Models","Moderations","Runs","Steps","Threads"]};

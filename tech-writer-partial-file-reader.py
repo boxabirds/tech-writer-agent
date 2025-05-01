@@ -17,7 +17,6 @@ import logging
 import textwrap
 import abc  # Import the abc module for abstract base classes
 
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -25,12 +24,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 # TODO model management is pretty rough and could easily be abstracted better. 
 # Check for API keys
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-
 
 # Warn if neither API key is set
 if not GEMINI_API_KEY and not OPENAI_API_KEY:
@@ -38,11 +35,9 @@ if not GEMINI_API_KEY and not OPENAI_API_KEY:
     logger.warning("Please set at least one of these environment variables to use the respective API.")
     logger.warning("You can get a Gemini API key from https://aistudio.google.com")
     logger.warning("You can get an OpenAI API key from https://platform.openai.com")
-
 # Define model providers: check, high volume and fast. 
-GEMINI_MODELS = ["gemini-2.0-flash", "gemini-2.5-pro-preview-03-25", "gemini-2.5-flash-preview-04-17"]
-OPENAI_MODELS = ["gpt-4o-mini", "gpt-4o", "o3-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"]
-
+GEMINI_MODELS = ["gemini-2.0-flash"]
+OPENAI_MODELS = ["gpt-4o-mini", "gpt-4o"]
 
 def get_gitignore_spec(directory: str) -> pathspec.PathSpec:
     """
@@ -75,7 +70,6 @@ def get_gitignore_spec(directory: str) -> pathspec.PathSpec:
     return pathspec.PathSpec.from_lines(
         GitWildMatchPattern, ignore_patterns
     )
-
 def read_prompt_file(file_path: str) -> str:
     """Read a prompt from an external file."""
     try:
@@ -92,13 +86,11 @@ def read_prompt_file(file_path: str) -> str:
             raise UnicodeDecodeError(f"Error reading prompt file with latin-1 encoding: {str(e)}")
     except (IOError, OSError) as e:
         raise IOError(f"Error reading prompt file: {str(e)}")
-
 # System prompt components for the tech writer agent
 ROLE_AND_TASK = textwrap.dedent("""
     You are an expert tech writer that helps teams understand codebases with accurate and concise supporting analysis and documentation. 
     Your task is to analyse the local filesystem to understand the structure and functionality of a codebase.
 """)
-
 GENERAL_ANALYSIS_GUIDELINES = textwrap.dedent("""
     Follow these guidelines:
     - Use the available tools to explore the filesystem, read files, and gather information.
@@ -108,7 +100,6 @@ GENERAL_ANALYSIS_GUIDELINES = textwrap.dedent("""
     - Organize your response with clear headings and sections.
     - Cite specific files and line numbers to support your observations.
 """)
-
 INPUT_PROCESSING_GUIDELINES = textwrap.dedent("""
     Important guidelines:
     - The user's analysis prompt will be provided in the initial message, prefixed with the base directory of the codebase (e.g., "Base directory: /path/to/codebase").
@@ -119,7 +110,6 @@ INPUT_PROCESSING_GUIDELINES = textwrap.dedent("""
     - Provide clear, structured summaries of your findings in your final response.
     - Handle errors gracefully and report them clearly if they occur but don't let them halt the rest of the analysis.
 """)
-
 CODE_ANALYSIS_STRATEGIES = textwrap.dedent("""
     When analysing code:
     - Start by exploring the directory structure to understand the project organisation.
@@ -129,7 +119,6 @@ CODE_ANALYSIS_STRATEGIES = textwrap.dedent("""
     - Look for patterns in the code organisation (e.g., line counts, TODOs).
     - Summarise your findings to help someone understand the codebase quickly, tailored to the prompt.
 """)
-
 REACT_PLANNING_STRATEGY = textwrap.dedent("""
     You should follow the ReAct pattern:
     1. Thought: Reason about what you need to do next
@@ -137,7 +126,6 @@ REACT_PLANNING_STRATEGY = textwrap.dedent("""
     3. Observation: Review the results of the tool
     4. Repeat until you have enough information to provide a final answer
 """)
-
 REFLEXION_PLANNING_STRATEGY = textwrap.dedent("""
     You should follow the Reflexion pattern (an extension of ReAct):
     1. Thought: Reason about what you need to do next
@@ -146,16 +134,12 @@ REFLEXION_PLANNING_STRATEGY = textwrap.dedent("""
     4. Reflection: Analyze your approach, identify any mistakes or inefficiencies, and consider how to improve
     5. Repeat until you have enough information to provide a final answer
 """)
-
 QUALITY_REQUIREMENTS = textwrap.dedent("""
     When you've completed your analysis, provide a final answer in the form of a comprehensive Markdown document 
     that provides a mutually exclusive and collectively exhaustive (MECE) analysis of the codebase using the user prompt.
-
     Your analysis should be thorough, accurate, and helpful for someone trying to understand this codebase.
 """)
-
 # Combine components to form system prompts
-
 # Tool functions
 def find_all_matching_files(
     directory: str, 
@@ -216,7 +200,6 @@ def find_all_matching_files(
     except Exception as e:
         logger.error(f"Unexpected error finding files: {e}")
         return []
-
 def read_file(file_path: str) -> Dict[str, Any]:
     """Read the contents of a file."""
     try:
@@ -244,7 +227,6 @@ def read_file(file_path: str) -> Dict[str, Any]:
         return {"error": f"IO error reading file: {str(e)}"}
     except Exception as e:
         return {"error": f"Unexpected error reading file: {str(e)}"}
-
 def calculate(expression: str) -> Dict[str, Any]:
     """
     Evaluate a mathematical expression and return the result.
@@ -307,14 +289,58 @@ def calculate(expression: str) -> Dict[str, Any]:
             "error": f"Unexpected error evaluating expression: {str(e)}",
             "expression": expression
         }
-
+def partial_file_reader(file_path: str, offset: int = 0, lines: int = 201) -> Dict[str, Any]:
+    """
+    Read a specified number of lines from a file starting at a given offset.
+    
+    Args:
+        file_path: Path to the file to read
+        offset: Line number to start reading from (inclusive)
+        lines: Number of lines to read
+        
+    Returns:
+        Dictionary containing the file path and content of the specified lines
+    """
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return {"error": f"File not found: {file_path}"}
+        
+        with open(path, 'r', encoding='utf-8') as f:
+            # Move to the specified offset
+            f.seek(0)
+            for _ in range(offset):
+                next(f)
+            
+            # Read the specified number of lines
+            content = []
+            for _ in range(lines):
+                line = f.readline()
+                if not line:
+                    break
+                content.append(line.strip())
+        
+        return {
+            "file": file_path,
+            "content": content
+        }
+    except FileNotFoundError:
+        return {"error": f"File not found: {file_path}"}
+    except UnicodeDecodeError:
+        return {"error": f"Cannot decode file as UTF-8: {file_path}"}
+    except PermissionError:
+        return {"error": f"Permission denied when reading file: {file_path}"}
+    except IOError as e:
+        return {"error": f"IO error reading file: {str(e)}"}
+    except Exception as e:
+        return {"error": f"Unexpected error reading file: {str(e)}"}
 # Dictionary mapping tool names to their functions
 TOOLS = {
     "find_all_matching_files": find_all_matching_files,
     "read_file": read_file,
-    "calculate": calculate
+    "calculate": calculate,
+    "partial_file_reader": partial_file_reader
 }
-
 class CustomEncoder(json.JSONEncoder):
     """
     Custom JSON encoder that handles Path objects from pathlib.
@@ -328,7 +354,6 @@ class CustomEncoder(json.JSONEncoder):
         if isinstance(obj, Path):
             return str(obj)
         return super().default(obj)
-
 class TechWriterAgent(abc.ABC):
     """Abstract base class for codebase analysis agents."""
     
@@ -530,13 +555,11 @@ class TechWriterAgent(abc.ABC):
         """
         pass
 
-
 class ReActAgent(TechWriterAgent):
     """Agent that uses the ReAct pattern for codebase analysis."""
     
     def __init__(self, model_name="gpt-4o-mini", base_url=None):
         REACT_SYSTEM_PROMPT = f"{ROLE_AND_TASK}\n\n{GENERAL_ANALYSIS_GUIDELINES}\n\n{INPUT_PROCESSING_GUIDELINES}\n\n{CODE_ANALYSIS_STRATEGIES}\n\n{REACT_PLANNING_STRATEGY}\n\n{QUALITY_REQUIREMENTS}"
-
         """Initialize the ReAct agent with the specified model."""
         super().__init__(model_name, base_url)
         self.system_prompt = REACT_SYSTEM_PROMPT
@@ -579,14 +602,12 @@ class ReActAgent(TechWriterAgent):
         
         return self.final_answer
 
-
 class ReflexionAgent(TechWriterAgent):
     """Agent that uses the Reflexion pattern for codebase analysis."""
     
     def __init__(self, model_name="gpt-4o-mini", base_url=None):
         """Initialize the Reflexion agent with the specified model."""
         REFLEXION_SYSTEM_PROMPT = f"{ROLE_AND_TASK}\n\n{GENERAL_ANALYSIS_GUIDELINES}\n\n{INPUT_PROCESSING_GUIDELINES}\n\n{CODE_ANALYSIS_STRATEGIES}\n\n{REFLEXION_PLANNING_STRATEGY}\n\n{QUALITY_REQUIREMENTS}"
-
         super().__init__(model_name, base_url)
         self.system_prompt = REFLEXION_SYSTEM_PROMPT
     
@@ -670,7 +691,6 @@ class ReflexionAgent(TechWriterAgent):
             self.final_answer = "Failed to complete the analysis within the step limit."
         
         return self.final_answer
-
 def get_command_line_args():
     """Get command line arguments."""
     parser = argparse.ArgumentParser(description="Analyse a codebase using an LLM agent.")
@@ -698,7 +718,6 @@ def get_command_line_args():
         parser.error("No API keys set. Please set OPENAI_API_KEY or GEMINI_API_KEY environment variables.")
     
     return args
-
 def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str, agent_type: str = "react", base_url: str = None) -> str:
     """Analyse a codebase using the specified agent type with a prompt from an external file."""
     try:
@@ -736,7 +755,6 @@ def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         return f"Error running code analysis: {str(e)}"
-
 def save_results(analysis_result: str, model_name: str, agent_type: str) -> Path:
     """
     Save analysis results to a timestamped Markdown file in the output directory.
@@ -769,13 +787,11 @@ def save_results(analysis_result: str, model_name: str, agent_type: str) -> Path
     except IOError as e:
         logger.error(f"Error saving results: {e}")
         raise IOError(f"Failed to save results: {str(e)}")
-
 def main():
     try:
         args = get_command_line_args()
         analysis_result = analyse_codebase(args.directory, args.prompt_file, args.model, args.agent_type, args.base_url)
         save_results(analysis_result, args.model, args.agent_type)
-
     except (FileNotFoundError, IOError) as e:
         logger.error(f"File error: {str(e)}")
         return 1
@@ -785,6 +801,5 @@ def main():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return 1
-
 if __name__ == "__main__":
     main()
