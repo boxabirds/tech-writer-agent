@@ -16,7 +16,7 @@ import typing
 import logging
 import textwrap
 import abc  # Import the abc module for abstract base classes
-
+import sys
 
 # Configure logging
 logging.basicConfig(
@@ -333,7 +333,7 @@ class TechWriterAgent(abc.ABC):
     """Abstract base class for codebase analysis agents."""
     
     def __init__(self, model_name="gpt-4o-mini", base_url=None):
-        """Initialize the agent with the specified model."""
+        """Initialise the agent with the specified model."""
         self.model_name = model_name
         self.base_url = base_url
         self.memory = []
@@ -341,7 +341,14 @@ class TechWriterAgent(abc.ABC):
         self.system_prompt = None  # To be defined by subclasses
         
         # Determine which API to use based on the model name
-        self.client = OpenAI(api_key=OPENAI_API_KEY, base_url=base_url)
+        if model_name in GEMINI_MODELS:
+            if not GEMINI_API_KEY:
+                raise ValueError("GEMINI_API_KEY environment variable is not set but a Gemini model was specified.")
+            self.client = OpenAI(api_key=GEMINI_API_KEY, base_url=base_url)
+        else:
+            if not OPENAI_API_KEY:
+                raise ValueError("OPENAI_API_KEY environment variable is not set but an OpenAI model was specified.")
+            self.client = OpenAI(api_key=OPENAI_API_KEY, base_url=base_url)
     
     def create_openai_tool_definitions(self, tools_dict):
         """
@@ -537,7 +544,7 @@ class ReActAgent(TechWriterAgent):
     def __init__(self, model_name="gpt-4o-mini", base_url=None):
         REACT_SYSTEM_PROMPT = f"{ROLE_AND_TASK}\n\n{GENERAL_ANALYSIS_GUIDELINES}\n\n{INPUT_PROCESSING_GUIDELINES}\n\n{CODE_ANALYSIS_STRATEGIES}\n\n{REACT_PLANNING_STRATEGY}\n\n{QUALITY_REQUIREMENTS}"
 
-        """Initialize the ReAct agent with the specified model."""
+        """Initialise the ReAct agent with the specified model."""
         super().__init__(model_name, base_url)
         self.system_prompt = REACT_SYSTEM_PROMPT
     
@@ -584,7 +591,7 @@ class ReflexionAgent(TechWriterAgent):
     """Agent that uses the Reflexion pattern for codebase analysis."""
     
     def __init__(self, model_name="gpt-4o-mini", base_url=None):
-        """Initialize the Reflexion agent with the specified model."""
+        """Initialise the Reflexion agent with the specified model."""
         REFLEXION_SYSTEM_PROMPT = f"{ROLE_AND_TASK}\n\n{GENERAL_ANALYSIS_GUIDELINES}\n\n{INPUT_PROCESSING_GUIDELINES}\n\n{CODE_ANALYSIS_STRATEGIES}\n\n{REFLEXION_PLANNING_STRATEGY}\n\n{QUALITY_REQUIREMENTS}"
 
         super().__init__(model_name, base_url)
@@ -774,17 +781,32 @@ def main():
     try:
         args = get_command_line_args()
         analysis_result = analyse_codebase(args.directory, args.prompt_file, args.model, args.agent_type, args.base_url)
-        save_results(analysis_result, args.model, args.agent_type)
+        
+        # Check if the result is an error message or a step limit failure
+        if analysis_result.startswith("Error running code analysis:") or analysis_result == "Failed to complete the analysis within the step limit.":
+            logger.error(analysis_result)
+            print(analysis_result)
+            print("No output file was generated.")
+            sys.exit(1)
+        else:
+            save_results(analysis_result, args.model, args.agent_type)
+            print("Analysis complete.")
 
+    except ValueError as e:
+        logger.error(f"Configuration error: {str(e)}")
+        print(f"Configuration error: {str(e)}")
+        print("No output file was generated.")
+        sys.exit(1)
     except (FileNotFoundError, IOError) as e:
         logger.error(f"File error: {str(e)}")
-        return 1
-    except ValueError as e:
-        logger.error(f"Value error: {str(e)}")
-        return 1
+        print(f"File error: {str(e)}")
+        print("No output file was generated.")
+        sys.exit(1)
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        return 1
+        logger.error(f"Error during analysis: {str(e)}")
+        print(f"Error during analysis: {str(e)}")
+        print("No output file was generated.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
