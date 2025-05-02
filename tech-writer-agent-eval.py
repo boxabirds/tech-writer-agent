@@ -117,7 +117,7 @@ def generate_comparative_assessment(original_prompt, outputs):
     
     Args:
         original_prompt: The original prompt used for all agents
-        outputs: List of dicts with 'file', 'model', 'agent', and 'content' keys
+        outputs: List of dicts with 'file', 'model', 'agent', 'readable_name', and 'content' keys
     
     Returns:
         String containing the comparative assessment
@@ -125,28 +125,25 @@ def generate_comparative_assessment(original_prompt, outputs):
     configure(api_key=os.getenv('GEMINI_API_KEY'))
     model = GenerativeModel('gemini-2.0-flash')
     
-    # Construct a prompt for the comparative assessment
-    comparison_prompt = f"""Given the input prompt and the results produced by different agent configurations, perform an in-depth qualitative assessment of the relative merits of each.
+    # Get a list of agent names for reference
+    agent_names = [output.get('readable_name', f"{output['model']} ({output['agent']})") for output in outputs]
+    
+    # Start with the exact prompt specified by the user, with additional naming instructions
+    comparison_prompt = f"""Given the input prompt and the results produced by a series of different agent configurations, perform an in-depth qualitative assessment of the relative merits of each. Create a new section for each report describing in detail, with as many subsections as necessary, the assessment of that agent output with respect to all the other agent outputs.
+
+IMPORTANT: Always refer to each agent by its full name: {', '.join(agent_names)}. DO NOT use generic labels like "Output #1" or "Agent A" anywhere in your response.
 
 FORMAT YOUR RESPONSE IN MARKDOWN with proper headings and subheadings.
 
-For each agent output:
-1. Create a section with the agent's name
-2. Break down your assessment by the major architecture components (similar to the prompt sections)
-3. Highlight specific strengths and weaknesses
-4. Compare directly with other agent outputs where relevant
-
-End with a summary section that ranks the outputs and explains the reasoning behind the ranking.
-
-Original Prompt:
-{original_prompt}
-
 """
     
-    # Add each agent's output to the prompt with clear separation
+    # Add the original prompt
+    comparison_prompt += f"ORIGINAL PROMPT:\n{original_prompt}\n\n"
+    
+    # Add each agent's output with its readable name as a label
     for i, output in enumerate(outputs):
         agent_label = output.get('readable_name', f"{output['model']} ({output['agent']})")
-        comparison_prompt += f"\n\n{'='*80}\nAGENT OUTPUT #{i+1}: {agent_label}\n{'='*80}\n\n{output['content']}\n\n"
+        comparison_prompt += f"\n\n{'='*80}\n{agent_label}\n{'='*80}\n\n{output['content']}\n\n"
     
     try:
         response = model.generate_content(comparison_prompt)
@@ -159,6 +156,16 @@ def generate_comparison(evaluations, file_info, comparative_assessment):
     """Generate comparison report from evaluations and file info."""
     # Parse evaluation results
     evaluation_results = []
+    
+    # Map for agent references
+    agent_name_map = {}
+    if len(file_info) >= 2:
+        agent_name_map = {
+            'agent_a': file_info[0].get('readable_name', 'Agent A'),
+            'agent_b': file_info[1].get('readable_name', 'Agent B'),
+            'Agent A': file_info[0].get('readable_name', 'Agent A'),
+            'Agent B': file_info[1].get('readable_name', 'Agent B')
+        }
     
     for eval_item in evaluations:
         try:
@@ -194,6 +201,16 @@ def generate_comparison(evaluations, file_info, comparative_assessment):
                     agent_b = eval_data.get('agent_b', {})
                     winner = eval_data.get('winner', 'Unknown')
                     rationale = eval_data.get('rationale', 'No rationale provided')
+                    
+                    # Replace agent references in rationale text
+                    for agent_ref, agent_name in agent_name_map.items():
+                        rationale = rationale.replace(agent_ref, agent_name)
+                        # Also handle lowercase matches
+                        rationale = rationale.replace(agent_ref.lower(), agent_name)
+                    
+                    # Map winner to readable name
+                    if winner in agent_name_map:
+                        winner = agent_name_map[winner]
                     
                     evaluation_results.append({
                         'file': file_path,
@@ -250,6 +267,16 @@ def generate_comparison(evaluations, file_info, comparative_assessment):
                     rationale_match = re.search(r'"rationale"[:\s]+"([^"]+)"', raw_text)
                     rationale = rationale_match.group(1) if rationale_match else "No rationale provided"
                     
+                    # Replace agent references in rationale text
+                    for agent_ref, agent_name in agent_name_map.items():
+                        rationale = rationale.replace(agent_ref, agent_name)
+                        # Also handle lowercase matches
+                        rationale = rationale.replace(agent_ref.lower(), agent_name)
+                    
+                    # Map winner to readable name
+                    if winner in agent_name_map:
+                        winner = agent_name_map[winner]
+                    
                     evaluation_results.append({
                         'file': file_path,
                         'model': model,
@@ -262,6 +289,13 @@ def generate_comparison(evaluations, file_info, comparative_assessment):
                 except Exception as regex_error:
                     print(f"Error extracting scores with regex: {regex_error}")
                     # Fall back to using the raw text
+                    
+                    # Replace agent references in raw text
+                    for agent_ref, agent_name in agent_name_map.items():
+                        raw_text = raw_text.replace(agent_ref, agent_name)
+                        # Also handle lowercase matches
+                        raw_text = raw_text.replace(agent_ref.lower(), agent_name)
+                    
                     evaluation_results.append({
                         'file': file_path,
                         'model': model,
@@ -317,7 +351,12 @@ def generate_comparison(evaluations, file_info, comparative_assessment):
             winner_row = ["| **Winner** |"]
             for result in evaluation_results:
                 winner = result.get('winner', 'Tie')
-                winner_row.append(f" {winner} |")
+                # Map the winner to readable name if needed
+                if winner in ['agent_a', 'agent_b', 'Agent A', 'Agent B']:
+                    mapped_winner = agent_name_map.get(winner, winner)
+                    winner_row.append(f" {mapped_winner} |")
+                else:
+                    winner_row.append(f" {winner} |")
             markdown.append("".join(winner_row[:2]))  # Just one winner column
     
     # Add judge's rationale
@@ -337,6 +376,9 @@ def generate_comparison(evaluations, file_info, comparative_assessment):
         winner_counts = {}
         for result in evaluation_results:
             winner = result.get('winner', 'Tie')
+            # Map the winner to readable name if needed
+            if winner in ['agent_a', 'agent_b', 'Agent A', 'Agent B']:
+                winner = agent_name_map.get(winner, winner)
             winner_counts[winner] = winner_counts.get(winner, 0) + 1
         
         most_common_winner = max(winner_counts.items(), key=lambda x: x[1])[0]
