@@ -30,6 +30,7 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
     
     evaluations = []
     file_info = []
+    outputs_for_comparison = []
     
     for file_path in output_files:
         content = load_file_content(file_path)
@@ -44,6 +45,14 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
             'file': file_path,
             'model': model_name,
             'agent': agent_type
+        })
+        
+        # Store output for comparative assessment
+        outputs_for_comparison.append({
+            'file': file_path,
+            'model': model_name,
+            'agent': agent_type,
+            'content': content
         })
             
         prompt = f"""
@@ -67,9 +76,57 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
         except Exception as e:
             print(f"Error evaluating {file_path}: {e}")
     
-    return evaluations, file_info
+    # Generate the comparative assessment
+    comparative_assessment = None
+    if len(outputs_for_comparison) > 1:
+        comparative_assessment = generate_comparative_assessment(original_prompt, outputs_for_comparison)
+    
+    return evaluations, file_info, comparative_assessment
 
-def generate_comparison(evaluations, file_info):
+def generate_comparative_assessment(original_prompt, outputs):
+    """Generate a qualitative comparative assessment of multiple outputs.
+    
+    Args:
+        original_prompt: The original prompt used for all agents
+        outputs: List of dicts with 'file', 'model', 'agent', and 'content' keys
+    
+    Returns:
+        String containing the comparative assessment
+    """
+    configure(api_key=os.getenv('GEMINI_API_KEY'))
+    model = GenerativeModel('gemini-2.0-flash')
+    
+    # Construct a prompt for the comparative assessment
+    comparison_prompt = f"""Given the input prompt and the results produced by different agent configurations, perform an in-depth qualitative assessment of the relative merits of each.
+
+FORMAT YOUR RESPONSE IN MARKDOWN with proper headings and subheadings.
+
+For each agent output:
+1. Create a section with the agent's name
+2. Break down your assessment by the major architecture components (similar to the prompt sections)
+3. Highlight specific strengths and weaknesses
+4. Compare directly with other agent outputs where relevant
+
+End with a summary section that ranks the outputs and explains the reasoning behind the ranking.
+
+Original Prompt:
+{original_prompt}
+
+"""
+    
+    # Add each agent's output to the prompt with clear separation
+    for i, output in enumerate(outputs):
+        agent_label = f"{output['model']} ({output['agent']})"
+        comparison_prompt += f"\n\n{'='*80}\nAGENT OUTPUT #{i+1}: {agent_label}\n{'='*80}\n\n{output['content']}\n\n"
+    
+    try:
+        response = model.generate_content(comparison_prompt)
+        return response.text
+    except Exception as e:
+        print(f"Error generating comparative assessment: {e}")
+        return "Error: Unable to generate comparative assessment."
+
+def generate_comparison(evaluations, file_info, comparative_assessment):
     """Generate comparison report from evaluations and file info."""
     # Parse evaluation results
     evaluation_results = []
@@ -258,6 +315,11 @@ def generate_comparison(evaluations, file_info):
         else:
             markdown.append("\n\n**Overall Result: Tie**")
     
+    # Add comparative assessment
+    if comparative_assessment:
+        markdown.append("\n## Comparative Assessment\n")
+        markdown.append(comparative_assessment)
+    
     return "\n".join(markdown)
 
 def main():
@@ -276,8 +338,8 @@ def main():
     if not all([eval_prompt, original_prompt]):
         return
 
-    evaluations, file_info = evaluate_outputs(eval_prompt, original_prompt, args.outputs)
-    comparison = generate_comparison(evaluations, file_info)
+    evaluations, file_info, comparative_assessment = evaluate_outputs(eval_prompt, original_prompt, args.outputs)
+    comparison = generate_comparison(evaluations, file_info, comparative_assessment)
     
     output_path = Path('example-output') / f"comparison-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
     with open(output_path, 'w') as f:
