@@ -46,7 +46,7 @@ Your response should only contain the name, nothing else."""
         # Fall back to basic extraction
         return extract_metadata(filename)[1].capitalize()
 
-def evaluate_outputs(eval_prompt, original_prompt, output_files):
+def evaluate_outputs(eval_prompt, original_prompt, output_files, original_prompt_file=None):
     """Evaluate multiple output files against the original prompt."""
     configure(api_key=os.getenv('GEMINI_API_KEY'))
     model = GenerativeModel('gemini-2.0-flash', generation_config=GenerationConfig(temperature=0.0))
@@ -102,6 +102,10 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
     
     try:
         response = model.generate_content(multi_agent_prompt)
+        # Debug output for inspection
+        print("\nDEBUG: Raw Judge Output =====")
+        print(response.text)
+        print("===== End Raw Judge Output\n")
         evaluations = [{
             'evaluation': response.text,
             'files': [file['file'] for file in processed_files],
@@ -126,7 +130,7 @@ Task Description:
 {original_prompt}
 
 Input Provided to Agents:
-The architecture analysis prompt
+The original task prompt
 
 """
     
@@ -139,9 +143,13 @@ The architecture analysis prompt
     prompt += """
 Evaluation Criteria:
 Evaluate each output based on the following criteria, weighted equally:
+
 Accuracy: How correct and factually accurate is the output relative to the task requirements and input?
-Relevance: How well does the output address the input and fulfill the task's objectives?
+
+Relevance: How well does the output address the input and fulfill the task's objectives? Focus on the quality and usefulness of the content.
+
 Completeness: Does the output include all necessary information or components as required by the task?
+
 Clarity: How clear, concise, and well-structured is the output?
 
 Scoring Instructions:
@@ -183,7 +191,7 @@ Provide your evaluation as a JSON object with the following structure:
       // Add entries for all agents
     ],
     "winner": "[Name of winning agent or 'Tie' if equal]",
-    "rationale": "[Detailed explanation of your evaluation and decision]"
+    "rationale": "[Detailed explanation of your evaluation and decision, focusing on substantive differences in quality]"
   }
 }
 ```
@@ -236,7 +244,7 @@ FORMAT YOUR RESPONSE IN MARKDOWN with proper headings and subheadings.
         print(f"Error generating comparative assessment: {e}")
         return "Error: Unable to generate comparative assessment."
 
-def generate_comparison(evaluations, file_info, comparative_assessment, original_prompt):
+def generate_comparison(evaluations, file_info, comparative_assessment, original_prompt, original_prompt_file=None):
     """Generate comparison report from evaluations and file info."""
     # Parse evaluation results
     evaluation_results = []
@@ -412,12 +420,12 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     
     markdown = [
-        f"# Architecture Analysis Comparison: {title}",
+        f"# Comparison: {title}",
         "",
         "## Evaluation Summary",
         f"- **Date**: {datetime.datetime.now().strftime('%Y-%m-%d')}",
         f"- **Models Compared**: {title}",
-        f"- **Prompt Used**: [architecture.prompt.txt](../prompts/architecture.prompt.txt)",
+        f"- **Prompt Used**: [{os.path.basename(original_prompt_file)}](../prompts/{os.path.basename(original_prompt_file)})" if original_prompt_file else "- **Prompt**: Custom prompt",
         f"- **Evaluation Criteria**: [llm-as-judge.txt](../prompts/llm-as-judge.txt)",
         "",
         "## Judge Scores",
@@ -527,32 +535,68 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
             markdown.append(f"\n### {readable_name}\n")
             markdown.append("```markdown\n" + content + "\n```")
     
-    return "\n".join(markdown)
+    # Return the joined string
+    return '\n'.join(markdown)
+
+def generate_appendix(outputs, file_info, original_prompt):
+    appendix = []
+    appendix.append("\n# Appendix\n")
+    appendix.append("\n## Original Prompt\n")
+    appendix.append("```\n" + original_prompt + "\n```")
+    appendix.append("\n## Agent Outputs\n")
+    for info in file_info:
+        readable_name = info.get('readable_name', f"{info['model']} ({info['agent']})")
+        file_path = info.get('file', '')
+        content = load_file_content(file_path)
+        
+        if content:
+            appendix.append(f"\n### {readable_name}\n")
+            appendix.append("```markdown\n" + content + "\n```")
+    return '\n'.join(appendix)
 
 def main():
-    parser = argparse.ArgumentParser(description='Evaluate tech writer agent outputs')
-    parser.add_argument('--eval-prompt', default='prompts/llm-as-judge.txt',
-                       help='Path to evaluation prompt')
-    parser.add_argument('--prompt', required=True,
-                       help='Path to original prompt used by agents')
-    parser.add_argument('outputs', nargs='+',
-                       help='List of output .md files to evaluate')
+    parser = argparse.ArgumentParser(description='Compare different outputs using LLM-as-Judge.')
+    parser.add_argument('--prompt', required=True, help='Prompt file to use for evaluation')
+    parser.add_argument('--output', help='Output file for the comparison report')
+    parser.add_argument('outputs', nargs='+', help='Output files to compare')
+    
     args = parser.parse_args()
-
-    eval_prompt = load_file_content(args.eval_prompt)
+    
+    # Load the prompt
     original_prompt = load_file_content(args.prompt)
-    
-    if not all([eval_prompt, original_prompt]):
+    original_prompt_file = args.prompt
+    if not original_prompt:
+        print(f"Error loading prompt: {args.prompt}")
         return
-
-    evaluations, file_info, comparative_assessment, original_prompt = evaluate_outputs(eval_prompt, original_prompt, args.outputs)
-    comparison = generate_comparison(evaluations, file_info, comparative_assessment, original_prompt)
     
-    output_path = Path('example-output') / f"comparison-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
-    with open(output_path, 'w') as f:
-        f.write(comparison)
+    # Load the evaluation prompt
+    eval_prompt = load_file_content("prompts/llm-as-judge.txt")
+    if not eval_prompt:
+        print("Error loading LLM-as-judge.txt")
+        return
     
-    print(f"Comparison saved to {output_path}")
+    # Evaluate outputs
+    evaluations, file_info, comparative_assessment, original_prompt = evaluate_outputs(eval_prompt, original_prompt, args.outputs, original_prompt_file)
+    
+    # Generate comparison markdown
+    markdown_content = generate_comparison(evaluations, file_info, comparative_assessment, original_prompt, original_prompt_file)
+    if not markdown_content:
+        print("Error generating comparison")
+        return
+    
+    # Generate appendix with all agent outputs
+    appendix_content = generate_appendix(args.outputs, file_info, original_prompt)
+    full_content = markdown_content + appendix_content
+    
+    # Save to output file
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_file = args.output if args.output else f"example-output/comparison-{timestamp}.md"
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    
+    with open(output_file, 'w') as f:
+        f.write(full_content)
+    
+    print(f"Comparison saved to {output_file}")
 
 if __name__ == '__main__':
     main()
