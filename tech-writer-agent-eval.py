@@ -55,7 +55,9 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
     file_info = []
     outputs_for_comparison = []
     
-    for file_path in output_files:
+    # Process all files first to extract content and metadata
+    processed_files = []
+    for i, file_path in enumerate(output_files):
         content = load_file_content(file_path)
         if not content:
             continue
@@ -64,15 +66,16 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
         filename = os.path.basename(file_path)
         readable_name = generate_readable_agent_name(filename)
         
-        # Extract model and agent (still needed for backward compatibility)
+        # Extract model and agent info
         model_name, agent_type = extract_metadata(file_path)
         
-        # Store basic file info with readable name
+        # Store info for this file
         file_info.append({
             'file': file_path,
             'model': model_name,
             'agent': agent_type,
-            'readable_name': readable_name
+            'readable_name': readable_name,
+            'index': i
         })
         
         # Store output for comparative assessment
@@ -81,29 +84,31 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
             'model': model_name,
             'agent': agent_type,
             'readable_name': readable_name,
-            'content': content
+            'content': content,
+            'index': i
         })
-            
-        prompt = f"""
-        {eval_prompt}
-        Task Description:
-        {original_prompt}
-        Input Provided to Agents:
-        The architecture analysis prompt
-        Agent Output:
-        {content}
-        """
         
-        try:
-            response = model.generate_content(prompt)
-            evaluations.append({
-                'file': str(file_path),
-                'model': model_name,
-                'agent': agent_type,
-                'evaluation': response.text
-            })
-        except Exception as e:
-            print(f"Error evaluating {file_path}: {e}")
+        processed_files.append({
+            'file': file_path,
+            'model': model_name,
+            'agent': agent_type,
+            'readable_name': readable_name,
+            'content': content,
+            'index': i
+        })
+    
+    # Modified LLM-as-judge prompt to handle multiple agents
+    multi_agent_prompt = modify_judge_prompt_for_multiple_agents(eval_prompt, processed_files, original_prompt)
+    
+    try:
+        response = model.generate_content(multi_agent_prompt)
+        evaluations = [{
+            'evaluation': response.text,
+            'files': [file['file'] for file in processed_files],
+            'indices': [file['index'] for file in processed_files]
+        }]
+    except Exception as e:
+        print(f"Error evaluating agents: {e}")
     
     # Generate the comparative assessment
     comparative_assessment = None
@@ -111,6 +116,85 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
         comparative_assessment = generate_comparative_assessment(original_prompt, outputs_for_comparison)
     
     return evaluations, file_info, comparative_assessment, original_prompt
+
+def modify_judge_prompt_for_multiple_agents(eval_prompt, processed_files, original_prompt):
+    """Modify the LLM-as-judge prompt to handle any number of agents."""
+    # Start with the base prompt structure but modify for multiple agents
+    prompt = """You are an impartial judge tasked with evaluating the relative performance of multiple agent outputs for a specific task. Your goal is to compare the outputs based on predefined criteria and determine which is best, or if they are equal, while providing a clear rationale for your decision.
+
+Task Description:
+{original_prompt}
+
+Input Provided to Agents:
+The architecture analysis prompt
+
+"""
+    
+    # Add each agent's output to the prompt
+    for i, file in enumerate(processed_files):
+        agent_label = file['readable_name']
+        prompt += f"Agent {i+1} ({agent_label}) Output:\n{file['content']}\n\n"
+    
+    # Add the evaluation criteria
+    prompt += """
+Evaluation Criteria:
+Evaluate each output based on the following criteria, weighted equally:
+Accuracy: How correct and factually accurate is the output relative to the task requirements and input?
+Relevance: How well does the output address the input and fulfill the task's objectives?
+Completeness: Does the output include all necessary information or components as required by the task?
+Clarity: How clear, concise, and well-structured is the output?
+
+Scoring Instructions:
+For each agent, score each criterion on a scale of 1-5, where:
+1: Poor - Significantly deficient or inappropriate
+2: Fair - Below average quality or partially addresses requirements
+3: Good - Average quality, meets basic requirements
+4: Very Good - Above average quality, exceeds some requirements
+5: Excellent - Exceptional quality, fully meets or exceeds all requirements
+
+After scoring, calculate a total score for each agent and determine the winner.
+
+Output Format:
+Provide your evaluation as a JSON object with the following structure:
+```json
+{
+  "evaluation": {
+    "agents": [
+      {
+        "name": "[Agent 1 Name]",
+        "scores": {
+          "accuracy": 5,
+          "relevance": 5,
+          "completeness": 5,
+          "clarity": 5,
+          "total_score": 20
+        }
+      },
+      {
+        "name": "[Agent 2 Name]",
+        "scores": {
+          "accuracy": 4,
+          "relevance": 4,
+          "completeness": 4,
+          "clarity": 4,
+          "total_score": 16
+        }
+      }
+      // Add entries for all agents
+    ],
+    "winner": "[Name of winning agent or 'Tie' if equal]",
+    "rationale": "[Detailed explanation of your evaluation and decision]"
+  }
+}
+```
+
+Remember to be fair, thorough, and specific in your evaluation, providing clear justifications for your scores and final decision. Your goal is to determine which agent produced the better output for this task, or if they were equally good.
+"""
+    
+    # Replace placeholder with actual prompt
+    prompt = prompt.replace("{original_prompt}", original_prompt)
+    
+    return prompt
 
 def generate_comparative_assessment(original_prompt, outputs):
     """Generate a qualitative comparative assessment of multiple outputs.
@@ -157,29 +241,15 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
     # Parse evaluation results
     evaluation_results = []
     
-    # Map for agent references - dynamically handle any number of agents
-    agent_name_map = {}
-    agent_index_map = {}  # Map agent_a -> 0, agent_b -> 1, etc.
-    
-    for i, info in enumerate(file_info):
-        readable_name = info.get('readable_name', f"Agent {chr(65+i)}")
-        agent_key = f"agent_{chr(97+i)}"  # agent_a, agent_b, agent_c, etc.
-        agent_letter = f"Agent {chr(65+i)}"  # Agent A, Agent B, Agent C, etc.
-        
-        # Map both lowercase and uppercase agent references to readable names
-        agent_name_map[agent_key] = readable_name
-        agent_name_map[agent_letter] = readable_name
-        agent_name_map[agent_key.upper()] = readable_name
-        agent_name_map[agent_letter.lower()] = readable_name
-        
-        # Also store the index for each agent key
-        agent_index_map[agent_key] = i
+    # Build mapping from indices to readable names
+    index_to_name = {}
+    for info in file_info:
+        index = info.get('index', -1)
+        readable_name = info.get('readable_name', f"Agent {len(index_to_name)}")
+        index_to_name[index] = readable_name
     
     for eval_item in evaluations:
         try:
-            file_path = eval_item['file']
-            model = eval_item['model']
-            agent = eval_item['agent']
             raw_text = eval_item['evaluation']
             
             # Extract JSON from the response
@@ -206,129 +276,164 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
                     
                     # Create a result with base information
                     result = {
-                        'file': file_path,
-                        'model': model,
-                        'agent': agent
+                        'files': eval_item.get('files', []),
+                        'indices': eval_item.get('indices', [])
                     }
                     
-                    # Extract agent scores dynamically
-                    for key, value in eval_data.items():
-                        if key.startswith('agent_'):
-                            result[key] = value
-                        elif key == 'winner':
-                            # Map winner to readable name if it's an agent reference
-                            winner = eval_data.get('winner', 'Tie')
-                            if winner in agent_name_map:
-                                result['winner'] = agent_name_map[winner]
-                            else:
-                                result['winner'] = winner
-                        elif key == 'rationale':
-                            # Replace agent references in rationale
-                            rationale = eval_data.get('rationale', 'No rationale provided')
-                            for agent_ref, agent_name in agent_name_map.items():
-                                rationale = rationale.replace(agent_ref, agent_name)
-                            result['rationale'] = rationale
-                        else:
-                            # Copy any other keys as-is
-                            result[key] = value
+                    # Extract agent scores from the agents array
+                    if 'agents' in eval_data:
+                        result['agent_scores'] = {}
+                        
+                        for agent_data in eval_data['agents']:
+                            agent_name = agent_data.get('name', '')
+                            # Find the agent index based on name
+                            agent_index = -1
+                            for idx, name in index_to_name.items():
+                                if name in agent_name or f"Agent {idx+1}" in agent_name:
+                                    agent_index = idx
+                                    break
+                            
+                            if agent_index >= 0 and 'scores' in agent_data:
+                                result['agent_scores'][agent_index] = agent_data['scores']
+                    
+                    # Extract winner
+                    if 'winner' in eval_data:
+                        winner = eval_data['winner']
+                        winner_index = -1
+                        
+                        # Try to map the winner string to an agent index
+                        if winner != 'Tie':
+                            for idx, name in index_to_name.items():
+                                if name in winner:
+                                    winner_index = idx
+                                    break
+                            
+                            # If couldn't map by name, check for Agent 1, Agent 2, etc.
+                            if winner_index < 0:
+                                for idx in range(len(file_info)):
+                                    if f"Agent {idx+1}" in winner:
+                                        winner_index = idx
+                                        break
+                        
+                        result['winner'] = winner_index if winner_index >= 0 else 'Tie'
+                    
+                    # Extract rationale
+                    if 'rationale' in eval_data:
+                        rationale = eval_data['rationale']
+                        
+                        # Replace generic agent references with readable names
+                        for idx, name in index_to_name.items():
+                            rationale = rationale.replace(f"Agent {idx+1}", name)
+                        
+                        result['rationale'] = rationale
                     
                     evaluation_results.append(result)
-            except (json.JSONDecodeError, TypeError, KeyError) as e:
-                print(f"Error parsing evaluation JSON: {e}")
-                # Extract scores manually using regex
+                
+            except Exception as e:
+                print(f"Failed to parse JSON response from judge: {e}")
+                
+                # Fallback regex approach for extracting scores
                 try:
                     # Create a result with extracted info
                     result = {
-                        'file': file_path,
-                        'model': model,
-                        'agent': agent
+                        'files': eval_item.get('files', []),
+                        'indices': eval_item.get('indices', []),
+                        'agent_scores': {}
                     }
                     
-                    # Try to extract scores for all possible agents using regex
-                    for i, info in enumerate(file_info):
-                        agent_key = f"agent_{chr(97+i)}"  # agent_a, agent_b, agent_c, etc.
-                        
+                    # Try to extract scores for all agents using regex
+                    for idx, name in index_to_name.items():
                         agent_scores = {}
                         
-                        # Extract scores for this agent using regex
-                        for criterion in ['accuracy', 'relevance', 'completeness', 'clarity', 'total_score']:
-                            # Try to match score for this criterion for this agent
-                            pattern = fr'"?{agent_key}"?.*?"?{criterion}"?[:\s]+(\d+)'
-                            match = re.search(pattern, raw_text)
-                            if match:
-                                agent_scores[criterion] = int(match.group(1))
+                        # Look for either Agent 1, Agent 2, etc. or the actual agent name
+                        agent_patterns = [
+                            f"Agent {idx+1}",
+                            re.escape(name)
+                        ]
                         
-                        # Only add this agent's scores if we found any
+                        for agent_pattern in agent_patterns:
+                            # Try each criteria
+                            for criterion in ['accuracy', 'relevance', 'completeness', 'clarity', 'total_score']:
+                                # Look for score pattern
+                                pattern = fr'{agent_pattern}.*?{criterion}.*?(\d+)'
+                                match = re.search(pattern, raw_text, re.IGNORECASE | re.DOTALL)
+                                if match:
+                                    agent_scores[criterion] = int(match.group(1))
+                        
                         if agent_scores:
-                            result[agent_key] = agent_scores
+                            result['agent_scores'][idx] = agent_scores
                     
                     # Extract winner
-                    winner_match = re.search(r'"winner"[:\s]+"([^"]+)"', raw_text)
+                    winner_match = re.search(r'winner.*?[:="\']+([^"\']+)["\']', raw_text, re.IGNORECASE)
                     winner = winner_match.group(1) if winner_match else "Tie"
                     
-                    # Map winner to readable name if it's an agent reference
-                    if winner in agent_name_map:
-                        result['winner'] = agent_name_map[winner]
-                    else:
-                        result['winner'] = winner
+                    # Try to match winner to an agent
+                    winner_index = -1
+                    if winner != 'Tie':
+                        for idx, name in index_to_name.items():
+                            if name in winner:
+                                winner_index = idx
+                                break
+                    
+                    result['winner'] = winner_index if winner_index >= 0 else 'Tie'
                     
                     # Extract rationale
-                    rationale_match = re.search(r'"rationale"[:\s]+"([^"]+)"', raw_text)
+                    rationale_match = re.search(r'rationale.*?[:="\']+([^"\']+)["\']', raw_text, re.IGNORECASE)
                     rationale = rationale_match.group(1) if rationale_match else "No rationale provided"
                     
-                    # Replace agent references in rationale text
-                    for agent_ref, agent_name in agent_name_map.items():
-                        rationale = rationale.replace(agent_ref, agent_name)
+                    # Replace agent references in rationale
+                    for idx, name in index_to_name.items():
+                        rationale = rationale.replace(f"Agent {idx+1}", name)
                     
                     result['rationale'] = rationale
                     
                     evaluation_results.append(result)
-                except Exception as regex_error:
-                    print(f"Error extracting scores with regex: {regex_error}")
-                    # Fall back to using the raw text
+                
+                except Exception as e:
+                    print(f"Failed to extract scores with regex: {e}")
                     
-                    # Replace agent references in raw text
+                    # Add raw text as last resort
                     raw_text_clean = raw_text
-                    for agent_ref, agent_name in agent_name_map.items():
-                        raw_text_clean = raw_text_clean.replace(agent_ref, agent_name)
+                    for idx, name in index_to_name.items():
+                        raw_text_clean = raw_text_clean.replace(f"Agent {idx+1}", name)
                     
                     evaluation_results.append({
-                        'file': file_path,
-                        'model': model,
-                        'agent': agent,
+                        'files': eval_item.get('files', []),
+                        'indices': eval_item.get('indices', []),
                         'raw_text': raw_text_clean
                     })
+                    
         except Exception as e:
-            print(f"Error processing evaluation: {e}")
+            print(f"Error parsing evaluation: {e}")
     
-    # Get human-readable agent names for the title
-    agent_names = []
-    for info in file_info:
-        agent_names.append(info.get('readable_name', f"Agent {chr(65+len(agent_names))}"))
+    # Generate the markdown report
+    title = ' vs '.join([info.get('readable_name', f"Agent {i}") for i, info in enumerate(file_info)])
     
-    # Generate markdown output
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    
     markdown = [
-        f"# Architecture Analysis Comparison: {' vs '.join(agent_names)}",
-        "\n## Evaluation Summary",
+        f"# Architecture Analysis Comparison: {title}",
+        "",
+        "## Evaluation Summary",
         f"- **Date**: {datetime.datetime.now().strftime('%Y-%m-%d')}",
-        f"- **Models Compared**: {' vs '.join([info.get('readable_name', f'{info['model']} ({info['agent']})') for info in file_info])}",
-        "- **Prompt Used**: [architecture.prompt.txt](../prompts/architecture.prompt.txt)",
-        "- **Evaluation Criteria**: [llm-as-judge.txt](../prompts/llm-as-judge.txt)",
-        "\n## Judge Scores\n"
+        f"- **Models Compared**: {title}",
+        f"- **Prompt Used**: [architecture.prompt.txt](../prompts/architecture.prompt.txt)",
+        f"- **Evaluation Criteria**: [llm-as-judge.txt](../prompts/llm-as-judge.txt)",
+        "",
+        "## Judge Scores",
+        ""
     ]
-    
-    # Set up table headers with readable agent names
-    agent_labels = [info.get('readable_name', f"Agent {chr(65+i)}") for i, info in enumerate(file_info)]
     
     # Create table header with proper pipe formatting
     header = "| Criteria |"
-    for label in agent_labels:
-        header += f" {label} |"
+    for info in file_info:
+        readable_name = info.get('readable_name', "Unknown")
+        header += f" {readable_name} |"
     markdown.append(header)
     
     # Create separator row with proper number of columns
     separator = "|:--------|"
-    for _ in agent_labels:
+    for _ in file_info:
         separator += ":--------|"
     markdown.append(separator)
         
@@ -337,13 +442,13 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
         row = f"| **{criterion.title()}** |"
         
         # Get scores from all evaluations for each agent
-        for i, info in enumerate(file_info):
-            agent_key = f"agent_{chr(97+i)}"  # agent_a, agent_b, agent_c, etc.
+        for info in file_info:
+            index = info.get('index', -1)
             score = "N/A"
             
             for result in evaluation_results:
-                if agent_key in result and criterion in result[agent_key]:
-                    score = result[agent_key][criterion]
+                if 'agent_scores' in result and index in result['agent_scores'] and criterion in result['agent_scores'][index]:
+                    score = result['agent_scores'][index][criterion]
                     break
             
             row += f" {score} |"
@@ -353,39 +458,51 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
     # Add winner row
     winner_row = "| **Winner** |"
     
-    # Just take the winner from the first evaluation_result if available
-    if evaluation_results and 'winner' in evaluation_results[0]:
-        winner = evaluation_results[0]['winner']
-        for _ in file_info:
-            winner_row += f" {winner} |"
-    else:
-        for _ in file_info:
-            winner_row += " Tie |"
-            
+    # Map winners to readable names
+    has_winner = False
+    for info in file_info:
+        index = info.get('index', -1)
+        is_winner = False
+        
+        for result in evaluation_results:
+            if 'winner' in result:
+                if result['winner'] == index:
+                    winner_row += f" {info.get('readable_name', 'Winner')} |"
+                    is_winner = True
+                    has_winner = True
+                    break
+                elif result['winner'] == 'Tie' and not has_winner:
+                    winner_row += " Tie |"
+                    is_winner = True
+                    break
+        
+        if not is_winner:
+            winner_row += " N/A |"
+    
     markdown.append(winner_row)
     
     # Add judge's rationale
-    markdown.append("\n## Qualitative Assessment\n")
+    markdown.append("")
+    markdown.append("## Qualitative Assessment")
+    markdown.append("")
     
-    if evaluation_results:
-        # Use the rationale from the first result
-        if 'rationale' in evaluation_results[0]:
-            markdown.append(evaluation_results[0]['rationale'])
-        elif 'raw_text' in evaluation_results[0]:
-            # Clean up raw text for display
-            clean_text = re.sub(r'```json.*?```', '', evaluation_results[0]['raw_text'], flags=re.DOTALL)
-            clean_text = re.sub(r'{.*}', '', clean_text, flags=re.DOTALL)
-            markdown.append(clean_text.strip())
-        
-        # Add winner conclusion
-        for result in evaluation_results:
-            if 'winner' in result:
-                winner = result.get('winner', 'Tie')
-                if winner != 'Tie':
-                    markdown.append(f"\n\n**Overall Winner: {winner}**")
-                else:
-                    markdown.append("\n\n**Overall Result: Tie**")
-                break
+    for result in evaluation_results:
+        if 'rationale' in result:
+            markdown.append(result['rationale'])
+            break
+        elif 'raw_text' in result:
+            markdown.append(result['raw_text'])
+            break
+    
+    # Add the winner declaration
+    for result in evaluation_results:
+        if 'winner' in result:
+            winner = result.get('winner', 'Tie')
+            if winner != 'Tie':
+                markdown.append(f"\n\n**Overall Winner: {index_to_name.get(winner, 'Unknown')}**")
+            else:
+                markdown.append("\n\n**Overall Result: Tie**")
+            break
     
     # Add comparative assessment
     if comparative_assessment:
