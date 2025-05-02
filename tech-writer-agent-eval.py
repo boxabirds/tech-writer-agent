@@ -157,15 +157,13 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
     # Parse evaluation results
     evaluation_results = []
     
-    # Map for agent references
+    # Map for agent references - dynamically handle any number of agents
     agent_name_map = {}
-    if len(file_info) >= 2:
-        agent_name_map = {
-            'agent_a': file_info[0].get('readable_name', 'Agent A'),
-            'agent_b': file_info[1].get('readable_name', 'Agent B'),
-            'Agent A': file_info[0].get('readable_name', 'Agent A'),
-            'Agent B': file_info[1].get('readable_name', 'Agent B')
-        }
+    for i, info in enumerate(file_info):
+        readable_name = info.get('readable_name', f"Agent {chr(65+i)}")
+        # Map both lowercase and uppercase agent references
+        agent_name_map[f'agent_{chr(97+i)}'] = readable_name  # lowercase a, b, c...
+        agent_name_map[f'Agent {chr(65+i)}'] = readable_name  # uppercase A, B, C...
     
     for eval_item in evaluations:
         try:
@@ -308,7 +306,7 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
     # Get human-readable agent names for the title
     agent_names = []
     for info in file_info:
-        agent_names.append(info.get('readable_name', f"{info['agent']}"))
+        agent_names.append(info.get('readable_name', f"Agent {chr(65+len(agent_names))}"))
     
     # Generate markdown output
     markdown = [
@@ -321,43 +319,48 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
         "\n## Judge Scores\n"
     ]
     
-    # Create score table
-    if evaluation_results:
-        # Set up table headers with readable agent names
-        agent_labels = [info.get('readable_name', f"Agent {chr(65+i)}") for i, info in enumerate(file_info[:2])]
-        if len(agent_labels) >= 2:
-            markdown.append(f"| Criteria | {agent_labels[0]} | {agent_labels[1]} |")
-            markdown.append("|:--------|:--------|:--------|")
+    # Set up table headers with readable agent names
+    agent_labels = [info.get('readable_name', f"Agent {chr(65+i)}") for i, info in enumerate(file_info)]
+    
+    # Create table header with proper pipe formatting
+    header = "| Criteria |"
+    for label in agent_labels:
+        header += f" {label} |"
+    markdown.append(header)
+    
+    # Create separator row with proper number of columns
+    separator = "|:--------|"
+    for _ in agent_labels:
+        separator += ":--------|"
+    markdown.append(separator)
             
-            # Add scores for each criterion
-            for criterion in ['accuracy', 'relevance', 'completeness', 'clarity', 'total_score']:
-                row = [f"| **{criterion.title()}** |"]
-                
-                # Get scores from all evaluations
-                for result in evaluation_results:
-                    if 'agent_a' in result and criterion in result['agent_a']:
-                        row.append(f" {result['agent_a'][criterion]} |")
-                    else:
-                        row.append(" N/A |")
-                        
-                    if 'agent_b' in result and criterion in result['agent_b']:
-                        row.append(f" {result['agent_b'][criterion]} |")
-                    else:
-                        row.append(" N/A |")
-                
-                markdown.append("".join(row[:3]))  # Limit to first 3 columns
+    # Add scores for each criterion
+    for criterion in ['accuracy', 'relevance', 'completeness', 'clarity', 'total_score']:
+        row = f"| **{criterion.title()}** |"
+        
+        # Get scores from all evaluations
+        for i, _ in enumerate(agent_labels):
+            agent_key = f"agent_{chr(97+i)}"  # agent_a, agent_b, agent_c, etc.
+            score = "N/A"
             
-            # Add winner row
-            winner_row = ["| **Winner** |"]
             for result in evaluation_results:
-                winner = result.get('winner', 'Tie')
-                # Map the winner to readable name if needed
-                if winner in ['agent_a', 'agent_b', 'Agent A', 'Agent B']:
-                    mapped_winner = agent_name_map.get(winner, winner)
-                    winner_row.append(f" {mapped_winner} |")
-                else:
-                    winner_row.append(f" {winner} |")
-            markdown.append("".join(winner_row[:2]))  # Just one winner column
+                if agent_key in result and criterion in result[agent_key]:
+                    score = result[agent_key][criterion]
+                    break
+            
+            row += f" {score} |"
+        
+        markdown.append(row)
+    
+    # Add winner row
+    winner_row = "| **Winner** |"
+    for result in evaluation_results:
+        winner = result.get('winner', 'Tie')
+        # Map the winner to readable name if needed
+        if winner in agent_name_map:
+            winner = agent_name_map[winner]
+        winner_row += f" {winner} |"
+    markdown.append(winner_row)
     
     # Add judge's rationale
     markdown.append("\n## Qualitative Assessment\n")
