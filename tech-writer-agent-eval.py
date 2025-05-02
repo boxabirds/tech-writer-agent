@@ -159,11 +159,21 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
     
     # Map for agent references - dynamically handle any number of agents
     agent_name_map = {}
+    agent_index_map = {}  # Map agent_a -> 0, agent_b -> 1, etc.
+    
     for i, info in enumerate(file_info):
         readable_name = info.get('readable_name', f"Agent {chr(65+i)}")
-        # Map both lowercase and uppercase agent references
-        agent_name_map[f'agent_{chr(97+i)}'] = readable_name  # lowercase a, b, c...
-        agent_name_map[f'Agent {chr(65+i)}'] = readable_name  # uppercase A, B, C...
+        agent_key = f"agent_{chr(97+i)}"  # agent_a, agent_b, agent_c, etc.
+        agent_letter = f"Agent {chr(65+i)}"  # Agent A, Agent B, Agent C, etc.
+        
+        # Map both lowercase and uppercase agent references to readable names
+        agent_name_map[agent_key] = readable_name
+        agent_name_map[agent_letter] = readable_name
+        agent_name_map[agent_key.upper()] = readable_name
+        agent_name_map[agent_letter.lower()] = readable_name
+        
+        # Also store the index for each agent key
+        agent_index_map[agent_key] = i
     
     for eval_item in evaluations:
         try:
@@ -193,73 +203,74 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
                         eval_data = data['evaluation']
                     else:
                         eval_data = data
-                        
-                    # Extract agent scores and winner info
-                    agent_a = eval_data.get('agent_a', {})
-                    agent_b = eval_data.get('agent_b', {})
-                    winner = eval_data.get('winner', 'Unknown')
-                    rationale = eval_data.get('rationale', 'No rationale provided')
                     
-                    # Replace agent references in rationale text
-                    for agent_ref, agent_name in agent_name_map.items():
-                        rationale = rationale.replace(agent_ref, agent_name)
-                        # Also handle lowercase matches
-                        rationale = rationale.replace(agent_ref.lower(), agent_name)
-                    
-                    # Map winner to readable name
-                    if winner in agent_name_map:
-                        winner = agent_name_map[winner]
-                    
-                    evaluation_results.append({
+                    # Create a result with base information
+                    result = {
                         'file': file_path,
                         'model': model,
-                        'agent': agent,
-                        'agent_a': agent_a,
-                        'agent_b': agent_b,
-                        'winner': winner,
-                        'rationale': rationale
-                    })
+                        'agent': agent
+                    }
+                    
+                    # Extract agent scores dynamically
+                    for key, value in eval_data.items():
+                        if key.startswith('agent_'):
+                            result[key] = value
+                        elif key == 'winner':
+                            # Map winner to readable name if it's an agent reference
+                            winner = eval_data.get('winner', 'Tie')
+                            if winner in agent_name_map:
+                                result['winner'] = agent_name_map[winner]
+                            else:
+                                result['winner'] = winner
+                        elif key == 'rationale':
+                            # Replace agent references in rationale
+                            rationale = eval_data.get('rationale', 'No rationale provided')
+                            for agent_ref, agent_name in agent_name_map.items():
+                                rationale = rationale.replace(agent_ref, agent_name)
+                            result['rationale'] = rationale
+                        else:
+                            # Copy any other keys as-is
+                            result[key] = value
+                    
+                    evaluation_results.append(result)
             except (json.JSONDecodeError, TypeError, KeyError) as e:
                 print(f"Error parsing evaluation JSON: {e}")
                 # Extract scores manually using regex
                 try:
-                    # Try to extract scores using regex patterns
-                    agent_a = {}
-                    agent_b = {}
+                    # Create a result with extracted info
+                    result = {
+                        'file': file_path,
+                        'model': model,
+                        'agent': agent
+                    }
                     
-                    # Extract accuracy scores
-                    accuracy_a = re.search(r'"agent_a".*?"accuracy"[:\s]+(\d+)', raw_text)
-                    accuracy_b = re.search(r'"agent_b".*?"accuracy"[:\s]+(\d+)', raw_text)
-                    if accuracy_a: agent_a['accuracy'] = int(accuracy_a.group(1))
-                    if accuracy_b: agent_b['accuracy'] = int(accuracy_b.group(1))
-                    
-                    # Extract relevance scores
-                    relevance_a = re.search(r'"agent_a".*?"relevance"[:\s]+(\d+)', raw_text)
-                    relevance_b = re.search(r'"agent_b".*?"relevance"[:\s]+(\d+)', raw_text)
-                    if relevance_a: agent_a['relevance'] = int(relevance_a.group(1))
-                    if relevance_b: agent_b['relevance'] = int(relevance_b.group(1))
-                    
-                    # Extract completeness scores
-                    completeness_a = re.search(r'"agent_a".*?"completeness"[:\s]+(\d+)', raw_text)
-                    completeness_b = re.search(r'"agent_b".*?"completeness"[:\s]+(\d+)', raw_text)
-                    if completeness_a: agent_a['completeness'] = int(completeness_a.group(1))
-                    if completeness_b: agent_b['completeness'] = int(completeness_b.group(1))
-                    
-                    # Extract clarity scores
-                    clarity_a = re.search(r'"agent_a".*?"clarity"[:\s]+(\d+)', raw_text)
-                    clarity_b = re.search(r'"agent_b".*?"clarity"[:\s]+(\d+)', raw_text)
-                    if clarity_a: agent_a['clarity'] = int(clarity_a.group(1))
-                    if clarity_b: agent_b['clarity'] = int(clarity_b.group(1))
-                    
-                    # Extract total scores
-                    total_a = re.search(r'"agent_a".*?"total_score"[:\s]+(\d+)', raw_text)
-                    total_b = re.search(r'"agent_b".*?"total_score"[:\s]+(\d+)', raw_text)
-                    if total_a: agent_a['total_score'] = int(total_a.group(1))
-                    if total_b: agent_b['total_score'] = int(total_b.group(1))
+                    # Try to extract scores for all possible agents using regex
+                    for i, info in enumerate(file_info):
+                        agent_key = f"agent_{chr(97+i)}"  # agent_a, agent_b, agent_c, etc.
+                        
+                        agent_scores = {}
+                        
+                        # Extract scores for this agent using regex
+                        for criterion in ['accuracy', 'relevance', 'completeness', 'clarity', 'total_score']:
+                            # Try to match score for this criterion for this agent
+                            pattern = fr'"?{agent_key}"?.*?"?{criterion}"?[:\s]+(\d+)'
+                            match = re.search(pattern, raw_text)
+                            if match:
+                                agent_scores[criterion] = int(match.group(1))
+                        
+                        # Only add this agent's scores if we found any
+                        if agent_scores:
+                            result[agent_key] = agent_scores
                     
                     # Extract winner
                     winner_match = re.search(r'"winner"[:\s]+"([^"]+)"', raw_text)
-                    winner = winner_match.group(1) if winner_match else "Unknown"
+                    winner = winner_match.group(1) if winner_match else "Tie"
+                    
+                    # Map winner to readable name if it's an agent reference
+                    if winner in agent_name_map:
+                        result['winner'] = agent_name_map[winner]
+                    else:
+                        result['winner'] = winner
                     
                     # Extract rationale
                     rationale_match = re.search(r'"rationale"[:\s]+"([^"]+)"', raw_text)
@@ -268,37 +279,24 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
                     # Replace agent references in rationale text
                     for agent_ref, agent_name in agent_name_map.items():
                         rationale = rationale.replace(agent_ref, agent_name)
-                        # Also handle lowercase matches
-                        rationale = rationale.replace(agent_ref.lower(), agent_name)
                     
-                    # Map winner to readable name
-                    if winner in agent_name_map:
-                        winner = agent_name_map[winner]
+                    result['rationale'] = rationale
                     
-                    evaluation_results.append({
-                        'file': file_path,
-                        'model': model,
-                        'agent': agent,
-                        'agent_a': agent_a,
-                        'agent_b': agent_b,
-                        'winner': winner,
-                        'rationale': rationale
-                    })
+                    evaluation_results.append(result)
                 except Exception as regex_error:
                     print(f"Error extracting scores with regex: {regex_error}")
                     # Fall back to using the raw text
                     
                     # Replace agent references in raw text
+                    raw_text_clean = raw_text
                     for agent_ref, agent_name in agent_name_map.items():
-                        raw_text = raw_text.replace(agent_ref, agent_name)
-                        # Also handle lowercase matches
-                        raw_text = raw_text.replace(agent_ref.lower(), agent_name)
+                        raw_text_clean = raw_text_clean.replace(agent_ref, agent_name)
                     
                     evaluation_results.append({
                         'file': file_path,
                         'model': model,
                         'agent': agent,
-                        'raw_text': raw_text
+                        'raw_text': raw_text_clean
                     })
         except Exception as e:
             print(f"Error processing evaluation: {e}")
@@ -333,13 +331,13 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
     for _ in agent_labels:
         separator += ":--------|"
     markdown.append(separator)
-            
+        
     # Add scores for each criterion
     for criterion in ['accuracy', 'relevance', 'completeness', 'clarity', 'total_score']:
         row = f"| **{criterion.title()}** |"
         
-        # Get scores from all evaluations
-        for i, _ in enumerate(agent_labels):
+        # Get scores from all evaluations for each agent
+        for i, info in enumerate(file_info):
             agent_key = f"agent_{chr(97+i)}"  # agent_a, agent_b, agent_c, etc.
             score = "N/A"
             
@@ -354,12 +352,16 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
     
     # Add winner row
     winner_row = "| **Winner** |"
-    for result in evaluation_results:
-        winner = result.get('winner', 'Tie')
-        # Map the winner to readable name if needed
-        if winner in agent_name_map:
-            winner = agent_name_map[winner]
-        winner_row += f" {winner} |"
+    
+    # Just take the winner from the first evaluation_result if available
+    if evaluation_results and 'winner' in evaluation_results[0]:
+        winner = evaluation_results[0]['winner']
+        for _ in file_info:
+            winner_row += f" {winner} |"
+    else:
+        for _ in file_info:
+            winner_row += " Tie |"
+            
     markdown.append(winner_row)
     
     # Add judge's rationale
@@ -376,20 +378,14 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
             markdown.append(clean_text.strip())
         
         # Add winner conclusion
-        winner_counts = {}
         for result in evaluation_results:
-            winner = result.get('winner', 'Tie')
-            # Map the winner to readable name if needed
-            if winner in ['agent_a', 'agent_b', 'Agent A', 'Agent B']:
-                winner = agent_name_map.get(winner, winner)
-            winner_counts[winner] = winner_counts.get(winner, 0) + 1
-        
-        most_common_winner = max(winner_counts.items(), key=lambda x: x[1])[0]
-        
-        if most_common_winner != 'Tie':
-            markdown.append(f"\n\n**Overall Winner: {most_common_winner}**")
-        else:
-            markdown.append("\n\n**Overall Result: Tie**")
+            if 'winner' in result:
+                winner = result.get('winner', 'Tie')
+                if winner != 'Tie':
+                    markdown.append(f"\n\n**Overall Winner: {winner}**")
+                else:
+                    markdown.append("\n\n**Overall Result: Tie**")
+                break
     
     # Add comparative assessment
     if comparative_assessment:
