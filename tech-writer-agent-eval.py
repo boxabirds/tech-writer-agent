@@ -110,7 +110,7 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
     if len(outputs_for_comparison) > 1:
         comparative_assessment = generate_comparative_assessment(original_prompt, outputs_for_comparison)
     
-    return evaluations, file_info, comparative_assessment
+    return evaluations, file_info, comparative_assessment, original_prompt
 
 def generate_comparative_assessment(original_prompt, outputs):
     """Generate a qualitative comparative assessment of multiple outputs.
@@ -152,7 +152,7 @@ FORMAT YOUR RESPONSE IN MARKDOWN with proper headings and subheadings.
         print(f"Error generating comparative assessment: {e}")
         return "Error: Unable to generate comparative assessment."
 
-def generate_comparison(evaluations, file_info, comparative_assessment):
+def generate_comparison(evaluations, file_info, comparative_assessment, original_prompt):
     """Generate comparison report from evaluations and file info."""
     # Parse evaluation results
     evaluation_results = []
@@ -393,6 +393,24 @@ def generate_comparison(evaluations, file_info, comparative_assessment):
         markdown.append("\n## Comparative Assessment\n")
         markdown.append(comparative_assessment)
     
+    # Add appendix with original prompt and agent outputs
+    markdown.append("\n# Appendix\n")
+    
+    # Add original prompt
+    markdown.append("\n## Original Prompt\n")
+    markdown.append("```\n" + original_prompt + "\n```")
+    
+    # Add each agent output
+    markdown.append("\n## Agent Outputs\n")
+    for info in file_info:
+        readable_name = info.get('readable_name', f"{info['model']} ({info['agent']})")
+        file_path = info.get('file', '')
+        content = load_file_content(file_path)
+        
+        if content:
+            markdown.append(f"\n### {readable_name}\n")
+            markdown.append("```markdown\n" + content + "\n```")
+    
     return "\n".join(markdown)
 
 def main():
@@ -411,8 +429,8 @@ def main():
     if not all([eval_prompt, original_prompt]):
         return
 
-    evaluations, file_info, comparative_assessment = evaluate_outputs(eval_prompt, original_prompt, args.outputs)
-    comparison = generate_comparison(evaluations, file_info, comparative_assessment)
+    evaluations, file_info, comparative_assessment, original_prompt = evaluate_outputs(eval_prompt, original_prompt, args.outputs)
+    comparison = generate_comparison(evaluations, file_info, comparative_assessment, original_prompt)
     
     output_path = Path('example-output') / f"comparison-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
     with open(output_path, 'w') as f:
