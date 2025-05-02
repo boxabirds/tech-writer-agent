@@ -20,9 +20,8 @@ function show_usage {
     echo "  --dir DIR       Directory to analyze (default: current directory)"
     echo "  --prompt FILE   Path to prompt file (default: prompt.txt)"
     echo "  --model MODEL   Model to use (default: gpt-4o-mini)"
-    echo "                  Available models: gpt-4o-mini, gpt-4o, gemini-2.0-flash"
-    echo "  --agent-type TYPE    Agent type to use (default: react)"
-    echo "                  Available types: react, reflexion"
+    echo "  --agent-type TYPE    Agent type to use (default: ReAct)"
+    echo "                  Available types: ReAct, Reflexion"
     echo "  --help          Show this help message"
     exit 1
 }
@@ -87,7 +86,7 @@ if [ -z "$OPENAI_API_KEY" ]; then
 fi
 
 # Build command
-CMD="python tech-writer-from-scratch.py \"$DIRECTORY\" \"$PROMPT_FILE\" --model \"$MODEL\" --agent-type \"$AGENT_TYPE\""
+CMD="source .venv/bin/activate && python tech-writer-from-scratch.py \"$DIRECTORY\" \"$PROMPT_FILE\" --model \"$MODEL\" --agent-type \"$AGENT_TYPE\""
 
 # Run the tech writer agent
 echo "Running original tech writer agent..."
