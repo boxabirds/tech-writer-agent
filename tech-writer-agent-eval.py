@@ -23,6 +23,29 @@ def extract_metadata(filename):
     agent = parts[-1] if len(parts) > 1 else 'unknown'
     return model, agent
 
+def generate_readable_agent_name(filename):
+    """Generate a human-readable name for an agent based on its filename."""
+    configure(api_key=os.getenv('GEMINI_API_KEY'))
+    model = GenerativeModel('gemini-2.0-flash-lite')
+    
+    prompt = f"""Take this filename '{filename}' and return a 2-3 word human-readable name that describes the agent configuration based on the filename. Use UK English spelling.
+    
+Examples:
+- "20250502-095806-react-gpt-4o-mini.md" → "ReAct GPT-4o Mini"
+- "20250502-100426-reflexion-gpt-4o-mini.md" → "Reflexion GPT-4o Mini"
+- "20250502-101522-react-gemini-2.md" → "ReAct Gemini 2"
+
+Your response should only contain the name, nothing else."""
+    
+    try:
+        response = model.generate_content(prompt)
+        readable_name = response.text.strip()
+        return readable_name
+    except Exception as e:
+        print(f"Error generating readable agent name: {e}")
+        # Fall back to basic extraction
+        return extract_metadata(filename)[1].capitalize()
+
 def evaluate_outputs(eval_prompt, original_prompt, output_files):
     """Evaluate multiple output files against the original prompt."""
     configure(api_key=os.getenv('GEMINI_API_KEY'))
@@ -37,14 +60,19 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
         if not content:
             continue
         
-        # Extract model and agent
+        # Generate a readable agent name
+        filename = os.path.basename(file_path)
+        readable_name = generate_readable_agent_name(filename)
+        
+        # Extract model and agent (still needed for backward compatibility)
         model_name, agent_type = extract_metadata(file_path)
         
-        # Store basic file info
+        # Store basic file info with readable name
         file_info.append({
             'file': file_path,
             'model': model_name,
-            'agent': agent_type
+            'agent': agent_type,
+            'readable_name': readable_name
         })
         
         # Store output for comparative assessment
@@ -52,6 +80,7 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files):
             'file': file_path,
             'model': model_name,
             'agent': agent_type,
+            'readable_name': readable_name,
             'content': content
         })
             
@@ -116,7 +145,7 @@ Original Prompt:
     
     # Add each agent's output to the prompt with clear separation
     for i, output in enumerate(outputs):
-        agent_label = f"{output['model']} ({output['agent']})"
+        agent_label = output.get('readable_name', f"{output['model']} ({output['agent']})")
         comparison_prompt += f"\n\n{'='*80}\nAGENT OUTPUT #{i+1}: {agent_label}\n{'='*80}\n\n{output['content']}\n\n"
     
     try:
@@ -242,17 +271,17 @@ def generate_comparison(evaluations, file_info, comparative_assessment):
         except Exception as e:
             print(f"Error processing evaluation: {e}")
     
-    # Get agent types
-    agents_info = []
+    # Get human-readable agent names for the title
+    agent_names = []
     for info in file_info:
-        agents_info.append(f"{info['agent']}")
+        agent_names.append(info.get('readable_name', f"{info['agent']}"))
     
     # Generate markdown output
     markdown = [
-        f"# Architecture Analysis Comparison: {' vs '.join(agents_info)}",
+        f"# Architecture Analysis Comparison: {' vs '.join(agent_names)}",
         "\n## Evaluation Summary",
         f"- **Date**: {datetime.datetime.now().strftime('%Y-%m-%d')}",
-        f"- **Models Compared**: {' vs '.join([f'{info['model']} ({info['agent']})' for info in file_info])}",
+        f"- **Models Compared**: {' vs '.join([info.get('readable_name', f'{info['model']} ({info['agent']})') for info in file_info])}",
         "- **Prompt Used**: [architecture.prompt.txt](../prompts/architecture.prompt.txt)",
         "- **Evaluation Criteria**: [llm-as-judge.txt](../prompts/llm-as-judge.txt)",
         "\n## Judge Scores\n"
@@ -260,34 +289,36 @@ def generate_comparison(evaluations, file_info, comparative_assessment):
     
     # Create score table
     if evaluation_results:
-        # Set up table headers
-        markdown.append("| Criteria | Agent A | Agent B |")
-        markdown.append("|:--------|:--------|:--------|")
-        
-        # Add scores for each criterion
-        for criterion in ['accuracy', 'relevance', 'completeness', 'clarity', 'total_score']:
-            row = [f"| **{criterion.title()}** |"]
+        # Set up table headers with readable agent names
+        agent_labels = [info.get('readable_name', f"Agent {chr(65+i)}") for i, info in enumerate(file_info[:2])]
+        if len(agent_labels) >= 2:
+            markdown.append(f"| Criteria | {agent_labels[0]} | {agent_labels[1]} |")
+            markdown.append("|:--------|:--------|:--------|")
             
-            # Get scores from all evaluations
+            # Add scores for each criterion
+            for criterion in ['accuracy', 'relevance', 'completeness', 'clarity', 'total_score']:
+                row = [f"| **{criterion.title()}** |"]
+                
+                # Get scores from all evaluations
+                for result in evaluation_results:
+                    if 'agent_a' in result and criterion in result['agent_a']:
+                        row.append(f" {result['agent_a'][criterion]} |")
+                    else:
+                        row.append(" N/A |")
+                        
+                    if 'agent_b' in result and criterion in result['agent_b']:
+                        row.append(f" {result['agent_b'][criterion]} |")
+                    else:
+                        row.append(" N/A |")
+                
+                markdown.append("".join(row[:3]))  # Limit to first 3 columns
+            
+            # Add winner row
+            winner_row = ["| **Winner** |"]
             for result in evaluation_results:
-                if 'agent_a' in result and criterion in result['agent_a']:
-                    row.append(f" {result['agent_a'][criterion]} |")
-                else:
-                    row.append(" N/A |")
-                    
-                if 'agent_b' in result and criterion in result['agent_b']:
-                    row.append(f" {result['agent_b'][criterion]} |")
-                else:
-                    row.append(" N/A |")
-            
-            markdown.append("".join(row[:3]))  # Limit to first 3 columns
-        
-        # Add winner row
-        winner_row = ["| **Winner** |"]
-        for result in evaluation_results:
-            winner = result.get('winner', 'Unknown')
-            winner_row.append(f" {winner} |")
-        markdown.append("".join(winner_row[:2]))  # Just one winner column
+                winner = result.get('winner', 'Tie')
+                winner_row.append(f" {winner} |")
+            markdown.append("".join(winner_row[:2]))  # Just one winner column
     
     # Add judge's rationale
     markdown.append("\n## Qualitative Assessment\n")
