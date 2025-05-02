@@ -5,7 +5,7 @@ import os
 import re
 import datetime
 from pathlib import Path
-from google.generativeai import configure, GenerativeModel
+from google.generativeai import configure, GenerativeModel, GenerationConfig
 
 def load_file_content(file_path):
     """Load content from a file."""
@@ -26,7 +26,7 @@ def extract_metadata(filename):
 def generate_readable_agent_name(filename):
     """Generate a human-readable name for an agent based on its filename."""
     configure(api_key=os.getenv('GEMINI_API_KEY'))
-    model = GenerativeModel('gemini-2.0-flash-lite')
+    model = GenerativeModel('gemini-2.0-flash-lite', generation_config=GenerationConfig(temperature=0.0))
     
     prompt = f"""Take this filename '{filename}' and return a 2-3 word human-readable name that describes the agent configuration based on the filename. Use UK English spelling.
     
@@ -49,7 +49,7 @@ Your response should only contain the name, nothing else."""
 def evaluate_outputs(eval_prompt, original_prompt, output_files):
     """Evaluate multiple output files against the original prompt."""
     configure(api_key=os.getenv('GEMINI_API_KEY'))
-    model = GenerativeModel('gemini-2.0-flash')
+    model = GenerativeModel('gemini-2.0-flash', generation_config=GenerationConfig(temperature=0.0))
     
     evaluations = []
     file_info = []
@@ -123,7 +123,7 @@ def generate_comparative_assessment(original_prompt, outputs):
         String containing the comparative assessment
     """
     configure(api_key=os.getenv('GEMINI_API_KEY'))
-    model = GenerativeModel('gemini-2.0-flash')
+    model = GenerativeModel('gemini-2.0-flash', generation_config=GenerationConfig(temperature=0.0))
     
     # Get a list of agent names for reference
     agent_names = [output.get('readable_name', f"{output['model']} ({output['agent']})") for output in outputs]
