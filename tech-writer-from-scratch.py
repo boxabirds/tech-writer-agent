@@ -733,18 +733,18 @@ def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str
             
         result = agent.run(prompt, directory)
         
-        return result
+        return result, directory.name  # Return the repository name along with the result
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")
-        return f"Error running code analysis: {str(e)}"
+        return f"Error running code analysis: {str(e)}", None
     except IOError as e:
         logger.error(f"IO error: {e}")
-        return f"Error running code analysis: {str(e)}"
+        return f"Error running code analysis: {str(e)}", None
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-        return f"Error running code analysis: {str(e)}"
+        return f"Error running code analysis: {str(e)}", None
 
-def save_results(analysis_result: str, model_name: str, agent_type: str) -> Path:
+def save_results(analysis_result: str, model_name: str, agent_type: str, repo_name: str = None) -> Path:
     """
     Save analysis results to a timestamped Markdown file in the output directory.
     
@@ -752,6 +752,7 @@ def save_results(analysis_result: str, model_name: str, agent_type: str) -> Path
         analysis_result: The analysis text to save
         model_name: The name of the model used for analysis
         agent_type: The type of agent used (react or reflexion)
+        repo_name: The name of the repository being analysed
         
     Returns:
         Path to the saved file
@@ -762,7 +763,13 @@ def save_results(analysis_result: str, model_name: str, agent_type: str) -> Path
     
     # Generate timestamp for filename
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_filename = f"{timestamp}-{agent_type}-{model_name}.md"
+    
+    # Include repository name in filename if available
+    if repo_name:
+        output_filename = f"{timestamp}-{repo_name}-{agent_type}-{model_name}.md"
+    else:
+        output_filename = f"{timestamp}-{agent_type}-{model_name}.md"
+        
     output_path = output_dir / output_filename
     
     # Save results to markdown file
@@ -780,16 +787,16 @@ def save_results(analysis_result: str, model_name: str, agent_type: str) -> Path
 def main():
     try:
         args = get_command_line_args()
-        analysis_result = analyse_codebase(args.directory, args.prompt_file, args.model, args.agent_type, args.base_url)
+        analysis_result, repo_name = analyse_codebase(args.directory, args.prompt_file, args.model, args.agent_type, args.base_url)
         
         # Check if the result is an error message or a step limit failure
-        if analysis_result.startswith("Error running code analysis:") or analysis_result == "Failed to complete the analysis within the step limit.":
+        if isinstance(analysis_result, str) and (analysis_result.startswith("Error running code analysis:") or analysis_result == "Failed to complete the analysis within the step limit."):
             logger.error(analysis_result)
             print(analysis_result)
             print("No output file was generated.")
             sys.exit(1)
         else:
-            save_results(analysis_result, args.model, args.agent_type)
+            save_results(analysis_result, args.model, args.agent_type, repo_name)
             print("Analysis complete.")
 
     except ValueError as e:

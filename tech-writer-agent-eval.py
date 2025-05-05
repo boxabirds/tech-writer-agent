@@ -33,9 +33,9 @@ def generate_readable_agent_name(filename):
     prompt = f"""Take this filename '{filename}' and return a 2-3 word human-readable name that describes the agent configuration based on the filename. Use UK English spelling.
     
 Examples:
-- "20250502-095806-react-gpt-4o-mini.md" → "ReAct GPT-4o Mini"
-- "20250502-100426-reflexion-gpt-4o-mini.md" → "Reflexion GPT-4o Mini"
-- "20250502-101522-react-gemini-2.md" → "ReAct Gemini 2"
+- "20250502-095806-LandscapeHub-react-gpt-4o-mini.md" → "ReAct GPT-4o Mini"
+- "20250502-100426-LandscapeHub-reflexion-gpt-4o-mini.md" → "Reflexion GPT-4o Mini"
+- "20250502-101522-LandscapeHub-react-gemini-2.md" → "ReAct Gemini 2"
 
 Your response should only contain the name, nothing else."""
     
@@ -90,7 +90,7 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files, original_prompt
     
     try:
         response = model.generate_content(formatted_prompt)
-        print(f"Raw LLM response: {response.text}")  # Debug logging
+        print(f"Raw LLM response: {response.text[:500]}...")  # Debug logging
         
         # Parse the structured evaluation response
         response_text = response.text if hasattr(response, 'text') else str(response)
@@ -258,6 +258,23 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
             report_lines.append(f"## Recommendations")
             report_lines.append("")
             report_lines.append(evaluation_data['recommendations'])
+            report_lines.append("")
+        
+        # Add the revised prompt if available
+        if 'revised_prompt' in evaluation_data:
+            report_lines.append(f"## Revised Prompt")
+            report_lines.append("")
+            report_lines.append("Based on the evaluation findings, the following revised prompt is suggested to address the identified issues:")
+            report_lines.append("")
+            report_lines.append("```")
+            revised_prompt = evaluation_data['revised_prompt']
+            # Extract the revised prompt from the response text
+            revised_prompt_match = re.search(r'```(?:markdown)?\s*(.*?)\s*```', revised_prompt, re.DOTALL)
+            if revised_prompt_match:
+                report_lines.append(revised_prompt_match.group(1))
+            else:
+                report_lines.append(revised_prompt)
+            report_lines.append("```")
             report_lines.append("")
         
         # Return the full content
