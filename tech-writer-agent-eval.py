@@ -26,28 +26,62 @@ def extract_metadata(filename):
     return model, agent
 
 def generate_readable_agent_name(filename):
-    """Generate a human-readable name for an agent based on its filename."""
-    configure(api_key=os.getenv('GEMINI_API_KEY'))
-    model = GenerativeModel('gemini-2.0-flash-lite', generation_config=GenerationConfig(temperature=0.0))
+    """Generate a human-readable name for an agent based on its filename.
     
-    prompt = f"""Take this filename '{filename}' and return a 2-3 word human-readable name that describes the agent configuration based on the filename. Use UK English spelling.
-    
-Examples:
-- "20250502-095806-LandscapeHub-react-gpt-4o-mini.md" → "ReAct GPT-4o Mini"
-- "20250502-100426-LandscapeHub-reflexion-gpt-4o-mini.md" → "Reflexion GPT-4o Mini"
-- "20250502-101522-LandscapeHub-react-gemini-2.md" → "ReAct Gemini 2"
-
-Your response should only contain the name, nothing else."""
-    
+    Examples:
+    - "20250502-095806-LandscapeHub-react-gpt-4o-mini.md" → "LandscapeHub ReAct GPT-4o Mini"
+    - "20250502-100426-LandscapeHub-reflexion-gpt-4o-mini.md" → "LandscapeHub Reflexion GPT-4o Mini"
+    - "20250502-101522-LandscapeHub-react-gemini-2.md" → "LandscapeHub ReAct Gemini 2"
+    """
     try:
-        response = model.generate_content(prompt)
-        readable_name = response.text.strip()
-        return readable_name
+        # Pattern matching date-time-[repo]-agent-model format
+        # Group 1: Repository name (optional)
+        # Group 2: Agent type
+        # Group 3: Model name
+        pattern = r'^\d{8}-\d{6}(?:-([^-]+))?-([^-]+)-(.+)\.md$'
+        
+        match = re.match(pattern, filename)
+        if not match:
+            return Path(filename).stem
+            
+        repo_name, agent_type, model_name = match.groups()
+        
+        # Format agent type (react -> ReAct)
+        if agent_type.lower() == "react":
+            agent_type = "ReAct"
+        elif agent_type.lower() == "reflexion":
+            agent_type = "Reflexion"
+        else:
+            agent_type = agent_type.capitalize()
+            
+        # Format model name
+        model_parts = model_name.split('-')
+        if len(model_parts) > 1:
+            # For models like gpt-4o-mini or gemini-2.0-flash
+            if model_parts[0] == "gpt" and model_parts[1][0].isdigit():
+                # Handle GPT models
+                formatted_model = f"GPT-{model_parts[1]}"
+                if len(model_parts) > 2:
+                    formatted_model += f" {' '.join(p.capitalize() for p in model_parts[2:])}"
+            elif model_parts[0] == "gemini":
+                # Handle Gemini models
+                formatted_model = f"Gemini {'.'.join(model_parts[1:])}"
+            else:
+                # Generic handling
+                formatted_model = ' '.join(p.capitalize() for p in model_parts)
+        else:
+            formatted_model = model_name.capitalize()
+            
+        # Build the final readable name
+        if repo_name:
+            return f"{repo_name} {agent_type} {formatted_model}"
+        else:
+            return f"{agent_type} {formatted_model}"
+            
     except Exception as e:
         print(f"Error generating readable agent name: {e}")
         traceback.print_exc()
-        # Fall back to basic extraction
-        return extract_metadata(filename)[1].capitalize()
+        return Path(filename).stem  # Fallback to filename stem
 
 def evaluate_outputs(eval_prompt, original_prompt, output_files, original_prompt_file=None):
     """Evaluate multiple output files against the original prompt using the LLM-as-judge."""
