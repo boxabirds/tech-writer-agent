@@ -58,6 +58,26 @@
     *   Note any significant version constraints or compatibility issues *mentioned* in configurations.
     *   Identify any clearly deprecated or outdated dependencies *based on package information*.
 
+## Mermaid Diagram Requirements -- needed for Google Gemini 2.0
+When creating diagrams, follow these syntax rules:
+1. Use square brackets `[]` for all node names (e.g. `[Component]` not `{Component}`)
+2. Keep node names simple - no special characters or parentheses
+3. For flow charts (graph LR/TD):
+   - Use `-->` for arrows
+   - Node names go inside `[]`
+4. For sequence diagrams:
+   - Use `participant` declarations
+   - Arrows with `->` and `-->>`
+
+Example of valid syntax:
+```mermaid
+graph LR
+    A[Client] --> B[Service]
+    B --> C[Database]
+```
+
+Your diagrams will be automatically validated - ensure they follow this exact syntax.
+
 ## Output Format Guidelines
 
 -   Begin with an executive summary (max 3 paragraphs) summarizing key findings.

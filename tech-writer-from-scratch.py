@@ -8,6 +8,7 @@ import pathspec
 from pathspec.patterns import GitWildMatchPattern
 import os
 import argparse
+import subprocess
 from binaryornot.check import is_binary
 from openai import OpenAI
 import math
@@ -335,7 +336,6 @@ class TechWriterAgent(abc.ABC):
     def __init__(self, model_name="gpt-4o-mini", base_url=None):
         """Initialise the agent with the specified model."""
         self.model_name = model_name
-        self.base_url = base_url
         self.memory = []
         self.final_answer = None
         self.system_prompt = None  # To be defined by subclasses
@@ -344,7 +344,10 @@ class TechWriterAgent(abc.ABC):
         if model_name in GEMINI_MODELS:
             if not GEMINI_API_KEY:
                 raise ValueError("GEMINI_API_KEY environment variable is not set but a Gemini model was specified.")
-            self.client = OpenAI(api_key=GEMINI_API_KEY, base_url=base_url)
+            self.client = OpenAI(
+                api_key=GEMINI_API_KEY,
+                base_url=base_url or "https://generativelanguage.googleapis.com/v1beta/openai/"
+            )
         else:
             if not OPENAI_API_KEY:
                 raise ValueError("OPENAI_API_KEY environment variable is not set but an OpenAI model was specified.")
@@ -678,11 +681,57 @@ class ReflexionAgent(TechWriterAgent):
         
         return self.final_answer
 
+def validate_github_url(url: str) -> bool:
+    """Validate GitHub URL or owner/repo format."""
+    # Standard GitHub URL
+    url_pattern = r'^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+(\.git)?(\/)?$'
+    # owner/repo format
+    repo_pattern = r'^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$'
+    return re.match(url_pattern, url) is not None or re.match(repo_pattern, url) is not None
+
+
+def get_repo_name_from_url(url: str) -> str:
+    """Extract owner/repo from GitHub URL or return directly if already in owner/repo format."""
+    if '/' in url and not url.startswith('http'):
+        return url  # Already in owner/repo format
+    url = url.rstrip('/').replace('.git', '')
+    return '/'.join(url.split('/')[-2:])
+
+
+def clone_repo(repo_url: str, cache_dir: str) -> Path:
+    """
+    Clone repo to cache if not exists, return local path.
+    
+    Args:
+        repo_url: GitHub repository URL
+        cache_dir: Directory to cache cloned repositories
+        
+    Returns:
+        Path to cloned repository
+    """
+    repo_name = get_repo_name_from_url(repo_url)
+    repo_path = Path(cache_dir) / repo_name
+    if not repo_path.exists():
+        repo_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            subprocess.run(['git', 'clone', '--depth', '1', repo_url, str(repo_path)], 
+                          check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to clone repository: {e.stderr}")
+            raise ValueError(f"Failed to clone repository: {repo_url}") from e
+    return repo_path
+
 def get_command_line_args():
     """Get command line arguments."""
     parser = argparse.ArgumentParser(description="Analyse a codebase using an LLM agent.")
-    parser.add_argument("directory", help="Directory containing the codebase to analyse")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("directory", nargs='?', help="Directory containing the codebase to analyse")
+    group.add_argument("--repo", help="GitHub repository URL to clone (e.g. https://github.com/owner/repo)")
     parser.add_argument("prompt_file", help="Path to a file containing the analysis prompt")
+    
+    # Add cache directory argument
+    parser.add_argument("--cache-dir", default="output/cache",
+                      help="Directory to cache cloned repositories (default: output/cache)")
     
     # Define available models based on which API keys are set
     available_models = []
@@ -707,42 +756,37 @@ def get_command_line_args():
     return args
 
 def analyse_codebase(directory_path: str, prompt_file_path: str, model_name: str, agent_type: str = "react", base_url: str = None) -> str:
-    """Analyse a codebase using the specified agent type with a prompt from an external file."""
-    try:
-        directory = Path(directory_path).resolve()
-        if not directory.exists():
-            raise FileNotFoundError(f"Directory not found: {directory_path}")
+    """
+    Analyse a codebase using the specified agent type with a prompt from an external file.
+    
+    Args:
+        directory_path: Path to directory containing codebase OR GitHub repository URL
+        prompt_file_path: Path to file containing analysis prompt
+        model_name: Name of model to use for analysis
+        agent_type: Type of agent (react or reflexion)
+        base_url: Base URL for API (optional)
         
-        # Read the prompt
-        prompt = read_prompt_file(prompt_file_path)
-        
-        # Set appropriate base URL based on the model
-        if base_url is None:
-            if model_name in GEMINI_MODELS:
-                base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
-            else:
-                base_url = None  # Use default OpenAI base URL for OpenAI models
-        
-        # Create and run the agent based on agent_type
-        if agent_type == "reflexion":
-            agent = ReflexionAgent(model_name=model_name, base_url=base_url)
-            logger.info("Using Reflexion agent with reflection capabilities")
-        else:
-            agent = ReActAgent(model_name=model_name, base_url=base_url)
-            logger.info("Using standard ReAct agent")
-            
-        result = agent.run(prompt, directory)
-        
-        return result, directory.name  # Return the repository name along with the result
-    except FileNotFoundError as e:
-        logger.error(f"File not found: {e}")
-        return f"Error running code analysis: {str(e)}", None
-    except IOError as e:
-        logger.error(f"IO error: {e}")
-        return f"Error running code analysis: {str(e)}", None
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        return f"Error running code analysis: {str(e)}", None
+    Returns:
+        tuple: (analysis_result, repo_name)
+    """
+    # Read the prompt from file
+    prompt = read_prompt_file(prompt_file_path)
+    
+    # Initialize the appropriate agent
+    if agent_type == "react":
+        agent = ReActAgent(model_name, base_url)
+    elif agent_type == "reflexion":
+        agent = ReflexionAgent(model_name, base_url)
+    else:
+        raise ValueError(f"Unknown agent type: {agent_type}")
+    
+    # Run the analysis
+    analysis_result = agent.run(prompt, directory_path)
+    
+    # Get repository name for output file
+    repo_name = Path(directory_path).name
+    
+    return analysis_result, repo_name
 
 def save_results(analysis_result: str, model_name: str, agent_type: str, repo_name: str = None) -> Path:
     """
@@ -776,43 +820,46 @@ def save_results(analysis_result: str, model_name: str, agent_type: str, repo_na
     try:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(analysis_result)
-        
-        logger.info(f"Analysis complete. Results saved to {output_path}")
-        
         return output_path
     except IOError as e:
-        logger.error(f"Error saving results: {e}")
-        raise IOError(f"Failed to save results: {str(e)}")
+        logger.error(f"Failed to save results: {str(e)}")
+        raise
 
 def main():
     try:
         args = get_command_line_args()
-        analysis_result, repo_name = analyse_codebase(args.directory, args.prompt_file, args.model, args.agent_type, args.base_url)
+        
+        # Handle repo cloning if specified
+        if args.repo:
+            if not validate_github_url(args.repo):
+                raise ValueError("Invalid GitHub repository URL format")
+            try:
+                directory_path = str(clone_repo(args.repo, args.cache_dir))
+            except Exception as e:
+                logger.error(f"Failed to clone repository: {str(e)}")
+                sys.exit(1)
+        else:
+            directory_path = args.directory
+            
+        # Validate directory exists
+        if not Path(directory_path).exists():
+            raise FileNotFoundError(f"Directory not found: {directory_path}")
+            
+        analysis_result, repo_name = analyse_codebase(directory_path, args.prompt_file, args.model, args.agent_type, args.base_url)
         
         # Check if the result is an error message or a step limit failure
-        if isinstance(analysis_result, str) and (analysis_result.startswith("Error running code analysis:") or analysis_result == "Failed to complete the analysis within the step limit."):
+        if isinstance(analysis_result, str) and \
+           (analysis_result.startswith("Error running code analysis:") or \
+            analysis_result == "Failed to complete the analysis within the step limit."):
             logger.error(analysis_result)
-            print(analysis_result)
-            print("No output file was generated.")
             sys.exit(1)
-        else:
-            save_results(analysis_result, args.model, args.agent_type, repo_name)
-            print("Analysis complete.")
-
-    except ValueError as e:
-        logger.error(f"Configuration error: {str(e)}")
-        print(f"Configuration error: {str(e)}")
-        print("No output file was generated.")
-        sys.exit(1)
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"File error: {str(e)}")
-        print(f"File error: {str(e)}")
-        print("No output file was generated.")
-        sys.exit(1)
+        
+        # Save the results
+        output_file = save_results(analysis_result, args.model, args.agent_type, repo_name)
+        logger.info(f"Analysis complete. Results saved to: {output_file}")
+        
     except Exception as e:
-        logger.error(f"Error during analysis: {str(e)}")
-        print(f"Error during analysis: {str(e)}")
-        print("No output file was generated.")
+        logger.error(f"Error: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":

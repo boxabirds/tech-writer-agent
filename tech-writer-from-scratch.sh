@@ -6,12 +6,14 @@ DEFAULT_DIRECTORY="."
 DEFAULT_PROMPT="prompt.txt"
 DEFAULT_MODEL="gpt-4o-mini"
 DEFAULT_AGENT_TYPE="react"
+DEFAULT_REPO=""
 
 # Parse command line arguments
 DIRECTORY=$DEFAULT_DIRECTORY
 PROMPT_FILE=$DEFAULT_PROMPT
 MODEL=$DEFAULT_MODEL
 AGENT_TYPE=$DEFAULT_AGENT_TYPE
+REPO=$DEFAULT_REPO
 
 # Function to display usage information
 function show_usage {
@@ -22,6 +24,7 @@ function show_usage {
     echo "  --model MODEL   Model to use (default: gpt-4o-mini)"
     echo "  --agent-type TYPE    Agent type to use (default: ReAct)"
     echo "                  Available types: ReAct, Reflexion"
+    echo "  --repo REPO     Repository to use (default: none)"
     echo "  --help          Show this help message"
     exit 1
 }
@@ -43,6 +46,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --agent-type)
             AGENT_TYPE="$2"
+            shift 2
+            ;;
+        --repo)
+            REPO="$2"
             shift 2
             ;;
         --output)
@@ -86,7 +93,11 @@ if [ -z "$OPENAI_API_KEY" ]; then
 fi
 
 # Build command
-CMD="source .venv/bin/activate && python tech-writer-from-scratch.py \"$DIRECTORY\" \"$PROMPT_FILE\" --model \"$MODEL\" --agent-type \"$AGENT_TYPE\""
+if [ -n "$REPO" ]; then
+    CMD="source .venv/bin/activate && python tech-writer-from-scratch.py --repo \"$REPO\" \"$PROMPT_FILE\" --model \"$MODEL\" --agent-type \"$AGENT_TYPE\""
+else
+    CMD="source .venv/bin/activate && python tech-writer-from-scratch.py \"$DIRECTORY\" \"$PROMPT_FILE\" --model \"$MODEL\" --agent-type \"$AGENT_TYPE\""
+fi
 
 # Run the tech writer agent
 echo "Running original tech writer agent..."
