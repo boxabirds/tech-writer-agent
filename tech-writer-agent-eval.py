@@ -167,6 +167,7 @@ FORMAT YOUR RESPONSE IN MARKDOWN with proper headings and subheadings.
         return "Error: Unable to generate comparative assessment."
 
 def generate_comparison(evaluations, file_info, comparative_assessment, original_prompt, original_prompt_file=None):
+    """Generate comparison report from evaluations."""
     try:
         # Validate input structure
         if not isinstance(evaluations, dict) or 'evaluation' not in evaluations:
@@ -174,40 +175,92 @@ def generate_comparison(evaluations, file_info, comparative_assessment, original
             
         evaluation_data = evaluations['evaluation']
         
-        # Process agent evaluations
-        evaluation_results = []
-        
         # Get agent evaluations
         agent_evaluations = evaluation_data.get('agents', {})
         if not isinstance(agent_evaluations, dict):
             raise ValueError(f"Expected agents dict, got {type(agent_evaluations)}")
         
-        # Generate report
-        timestamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-        output_file = os.path.join('example-output', f'comparison-{timestamp}.md')
+        # Build the report content
+        report_lines = []
         
-        with open(output_file, 'w') as f:
-            # Write header
-            f.write(f"# Agent Comparison Report\n")
-            f.write(f"Generated: {timestamp}\n\n")
-            
-            # Write individual evaluations
-            for agent_name, scores in agent_evaluations.items():
-                f.write(f"## {agent_name}\n\n")
-                f.write(f"- Accuracy: {scores.get('accuracy', 'N/A')}\n")
-                f.write(f"- Relevance: {scores.get('relevance', 'N/A')}\n")
-                f.write(f"- Completeness: {scores.get('completeness', 'N/A')}\n")
-                f.write(f"- Clarity: {scores.get('clarity', 'N/A')}\n\n")
-            
-            # Write consensus analysis
-            if 'consensus_analysis' in evaluation_data:
-                f.write(f"## Consensus Analysis\n\n{evaluation_data['consensus_analysis']}\n\n")
-            
-            # Write recommendations
-            if 'recommendations' in evaluation_data:
-                f.write(f"## Recommendations\n\n{evaluation_data['recommendations']}\n")
+        # Write header
+        report_lines.append("# Agent Comparison Report")
+        report_lines.append(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report_lines.append("")
         
-        return output_file
+        # Write scores summary table
+        report_lines.append("## Scores Summary")
+        report_lines.append("")
+        report_lines.append("| Agent | Accuracy | Relevance | Completeness | Clarity | Total |")
+        report_lines.append("|-------|----------|-----------|--------------|---------|-------|")
+        
+        for agent_name, scores in agent_evaluations.items():
+            accuracy = scores.get('accuracy', 'N/A')
+            relevance = scores.get('relevance', 'N/A')
+            completeness = scores.get('completeness', 'N/A')
+            clarity = scores.get('clarity', 'N/A')
+            total = scores.get('total_score', 'N/A')
+            
+            report_lines.append(f"| {agent_name} | {accuracy} | {relevance} | {completeness} | {clarity} | {total} |")
+        
+        report_lines.append("")
+        
+        # Write individual evaluations with more details
+        report_lines.append("## Individual Agent Evaluations")
+        report_lines.append("")
+        for agent_name, scores in agent_evaluations.items():
+            report_lines.append(f"### {agent_name}")
+            report_lines.append("")
+            report_lines.append(f"- **Accuracy**: {scores.get('accuracy', 'N/A')}")
+            report_lines.append(f"- **Relevance**: {scores.get('relevance', 'N/A')}")
+            report_lines.append(f"- **Completeness**: {scores.get('completeness', 'N/A')}")
+            report_lines.append(f"- **Clarity**: {scores.get('clarity', 'N/A')}")
+            report_lines.append(f"- **Total Score**: {scores.get('total_score', 'N/A')}")
+            
+            # Add outliers if available
+            outliers = scores.get('outliers', [])
+            if outliers:
+                report_lines.append("")
+                report_lines.append("**Outliers/Issues**:")
+                for outlier in outliers:
+                    report_lines.append(f"- {outlier}")
+            
+            report_lines.append("")
+        
+        # Write consensus analysis
+        if 'consensus_analysis' in evaluation_data:
+            report_lines.append(f"## Consensus Analysis")
+            report_lines.append("")
+            report_lines.append(evaluation_data['consensus_analysis'])
+            report_lines.append("")
+        
+        # Write hallucinations section if available
+        if 'hallucinations' in evaluation_data and evaluation_data['hallucinations']:
+            report_lines.append("## Hallucinations")
+            report_lines.append("")
+            
+            for hallucination, details in evaluation_data['hallucinations'].items():
+                report_lines.append(f"### {hallucination}")
+                report_lines.append("")
+                
+                if 'agents' in details:
+                    agent_list = ", ".join(details['agents'])
+                    report_lines.append(f"**Found in**: {agent_list}")
+                    report_lines.append("")
+                
+                if 'evidence' in details:
+                    report_lines.append(f"**Evidence**: {details['evidence']}")
+                    report_lines.append("")
+        
+        # Write recommendations
+        if 'recommendations' in evaluation_data:
+            report_lines.append(f"## Recommendations")
+            report_lines.append("")
+            report_lines.append(evaluation_data['recommendations'])
+            report_lines.append("")
+        
+        # Return the full content
+        return "\n".join(report_lines)
         
     except Exception as e:
         print(f"FATAL COMPARISON ERROR:")
@@ -231,52 +284,74 @@ def generate_appendix(outputs, file_info, original_prompt):
     return '\n'.join(appendix)
 
 def main():
-    parser = argparse.ArgumentParser(description='Compare different outputs using LLM-as-Judge.')
-    parser.add_argument('--prompt', required=True, help='Prompt file to use for evaluation')
-    parser.add_argument('--output', help='Output file for the comparison report')
-    parser.add_argument('outputs', nargs='+', help='Output files to compare')
-    
+    parser = argparse.ArgumentParser(description='Evaluate multiple outputs against original prompt')
+    parser.add_argument('--prompt', type=str, help='Path to evaluation prompt', required=True)
+    parser.add_argument('output_files', type=str, nargs='+', help='Paths to output files to evaluate')
     args = parser.parse_args()
     
-    # Load the prompt
-    original_prompt = load_file_content(args.prompt)
-    original_prompt_file = args.prompt
-    if not original_prompt:
-        print(f"Error loading prompt: {args.prompt}")
-        return
-    
     # Load the evaluation prompt
-    eval_prompt = load_file_content("prompts/llm-as-judge.txt")
+    eval_prompt = load_file_content(args.prompt)
     if not eval_prompt:
-        print("Error loading LLM-as-judge.txt")
+        print(f"Error loading evaluation prompt from {args.prompt}")
         return
     
-    # Evaluate outputs
-    evaluations, file_info, comparative_assessment, original_prompt = evaluate_outputs(eval_prompt, original_prompt, args.outputs, original_prompt_file)
+    # Extract the original prompt from file or use the evaluation prompt
+    try:
+        with open(args.output_files[0], 'r') as f:
+            content = f.read()
+            # Try to find the original prompt at the start of the file
+            prompt_match = re.search(r'# Original Prompt\s+```\s+(.*?)\s+```', content, re.DOTALL)
+            if prompt_match:
+                original_prompt = prompt_match.group(1)
+            else:
+                # Try other format with "prompt: ..." at the beginning
+                prompt_match = re.search(r'# Prompt\s+```\s+(.*?)\s+```', content, re.DOTALL)
+                if prompt_match:
+                    original_prompt = prompt_match.group(1)
+                else:
+                    # Fallback to loading from prompt file
+                    original_prompt = load_file_content(args.prompt)
+    except Exception as e:
+        print(f"Error loading original prompt: {e}")
+        traceback.print_exc()
+        # Fallback to prompt file
+        original_prompt = load_file_content(args.prompt)
     
-    if evaluations is None:
-        print("Evaluation failed - not saving results")
-        return
+    # Evaluate the outputs
+    evaluations, file_info, comparative_assessment, original_prompt = evaluate_outputs(
+        eval_prompt=eval_prompt,
+        original_prompt=original_prompt,
+        output_files=args.output_files,
+        original_prompt_file=args.prompt
+    )
     
-    # Generate comparison markdown
-    markdown_content = generate_comparison(evaluations, file_info, comparative_assessment, original_prompt, original_prompt_file)
-    if not markdown_content:
-        print("Error generating comparison")
-        return
-    
-    # Generate appendix with all agent outputs
-    appendix_content = generate_appendix(args.outputs, file_info, original_prompt)
-    full_content = markdown_content + appendix_content
-    
-    # Save to output file
+    # Generate comparison and save to file
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_file = args.output if args.output else f"example-output/comparison-{timestamp}.md"
+    output_file = os.path.join('example-output', f'comparison-{timestamp}.md')
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     
-    with open(output_file, 'w') as f:
-        f.write(full_content)
-    
-    print(f"Comparison saved to {output_file}")
+    if evaluations:
+        # Generate the comparison report
+        comparison_content = generate_comparison(
+            evaluations=evaluations,
+            file_info=file_info,
+            comparative_assessment=comparative_assessment,
+            original_prompt=original_prompt,
+            original_prompt_file=args.prompt
+        )
+        
+        # Generate appendix with agent outputs
+        appendix_content = generate_appendix(args.output_files, file_info, original_prompt)
+        
+        # Write the complete report to file
+        with open(output_file, 'w') as f:
+            f.write(comparison_content)
+            f.write("\n\n")
+            f.write(appendix_content)
+            
+        print(f"Comparison saved to {output_file}")
+    else:
+        print("Evaluation failed - not saving results")
 
 if __name__ == '__main__':
     main()
