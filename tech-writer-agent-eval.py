@@ -287,6 +287,7 @@ def generate_appendix(outputs, file_info, original_prompt):
 def main():
     parser = argparse.ArgumentParser(description='Evaluate multiple outputs against original prompt')
     parser.add_argument('--prompt', type=str, help='Path to evaluation prompt', required=True)
+    parser.add_argument('--task-prompt', type=str, help='Path to the original task prompt', required=False)
     parser.add_argument('output_files', type=str, nargs='+', help='Paths to output files to evaluate')
     args = parser.parse_args()
     
@@ -297,33 +298,68 @@ def main():
         return
     
     # Extract the original prompt from file or use the evaluation prompt
-    try:
-        with open(args.output_files[0], 'r') as f:
-            content = f.read()
-            # Try to find the original prompt at the start of the file
-            prompt_match = re.search(r'# Original Prompt\s+```\s+(.*?)\s+```', content, re.DOTALL)
-            if prompt_match:
-                original_prompt = prompt_match.group(1)
-            else:
-                # Try other format with "prompt: ..." at the beginning
-                prompt_match = re.search(r'# Prompt\s+```\s+(.*?)\s+```', content, re.DOTALL)
-                if prompt_match:
-                    original_prompt = prompt_match.group(1)
-                else:
-                    # Fallback to loading from prompt file
-                    original_prompt = load_file_content(args.prompt)
-    except Exception as e:
-        print(f"Error loading original prompt: {e}")
-        traceback.print_exc()
-        # Fallback to prompt file
-        original_prompt = load_file_content(args.prompt)
+    original_prompt = None
+    
+    # Try to get original prompt from the --task-prompt argument if provided
+    if args.task_prompt:
+        original_prompt = load_file_content(args.task_prompt)
+        if original_prompt:
+            print(f"Loaded original task prompt from {args.task_prompt}")
+    
+    # If not specified, try to extract from the output files
+    if not original_prompt:
+        try:
+            for file_path in args.output_files:
+                with open(file_path, 'r') as f:
+                    content = f.read()
+                    
+                    # Try multiple patterns to find the original prompt
+                    patterns = [
+                        r'# Original Prompt\s+```\s+(.*?)\s+```',
+                        r'# Prompt\s+```\s+(.*?)\s+```',
+                        r'## Prompt\s+```\s+(.*?)\s+```',
+                        r'## Original Prompt\s+```\s+(.*?)\s+```',
+                        r'# Architecture Prompt\s+```\s+(.*?)\s+```',
+                        r'# Comprehensive Architecture Analysis\s+(.*?)(?=\n\n)',
+                    ]
+                    
+                    for pattern in patterns:
+                        prompt_match = re.search(pattern, content, re.DOTALL)
+                        if prompt_match:
+                            original_prompt = prompt_match.group(1)
+                            print(f"Extracted original prompt from {file_path}")
+                            break
+                    
+                    if original_prompt:
+                        break
+        except Exception as e:
+            print(f"Error extracting original prompt: {e}")
+            traceback.print_exc()
+    
+    # If we still don't have a prompt, try to get it from architecture.prompt.txt 
+    if not original_prompt:
+        architecture_prompt_path = os.path.join('prompts', 'architecture.prompt.txt')
+        if os.path.exists(architecture_prompt_path):
+            original_prompt = load_file_content(architecture_prompt_path)
+            print(f"Loaded original prompt from default path: {architecture_prompt_path}")
+    
+    # If all else fails, use the evaluation prompt itself
+    if not original_prompt:
+        print("WARNING: Could not find original prompt, using evaluation prompt instead")
+        original_prompt = eval_prompt
+    
+    # Log the original prompt that was used to generate the agent outputs
+    print("\nORIGINAL PROMPT USED TO GENERATE REPORTS:")
+    print("=" * 50)
+    print(original_prompt[:500] + "..." if len(original_prompt) > 500 else original_prompt)
+    print("=" * 50 + "\n")
     
     # Evaluate the outputs
     evaluations, file_info, comparative_assessment, original_prompt = evaluate_outputs(
         eval_prompt=eval_prompt,
         original_prompt=original_prompt,
         output_files=args.output_files,
-        original_prompt_file=args.prompt
+        original_prompt_file=args.task_prompt
     )
     
     # Generate comparison and save to file
@@ -338,7 +374,7 @@ def main():
             file_info=file_info,
             comparative_assessment=comparative_assessment,
             original_prompt=original_prompt,
-            original_prompt_file=args.prompt
+            original_prompt_file=args.task_prompt
         )
         
         # Generate appendix with agent outputs
