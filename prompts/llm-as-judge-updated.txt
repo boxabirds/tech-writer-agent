@@ -17,17 +17,42 @@ IMPORTANT CONTEXT: The agents were analyzing a real codebase, not creating a hyp
 Evaluation Criteria:
 Evaluate the outputs based on the following criteria, weighted equally unless otherwise specified:
 
-1. Accuracy: How correct and factually accurate is the output relative to the task requirements and input?
-2. Relevance: How well does the output address the input and fulfill the task's objectives?
-3. Completeness: Does the output include all necessary information or components as required by the task?
-4. Clarity: How clear, concise, and well-structured is the output?
+1. Accuracy (0-100): How correct and factually accurate is the output relative to the task requirements and input?
+   - 90-100: Exceptional accuracy with no factual errors and precise representation of code structures
+   - 80-89: Very good accuracy with minimal insignificant factual errors
+   - 70-79: Good accuracy with a few minor factual errors that don't impact overall understanding
+   - 60-69: Acceptable accuracy with some notable factual errors 
+   - Below 60: Poor accuracy with significant factual errors
+
+2. Relevance (0-100): How well does the output address the input and fulfill the task's objectives?
+   - 90-100: Exceptional focus on the core requirements with all key sections fully addressed
+   - 80-89: Very good focus with most key requirements thoroughly addressed
+   - 70-79: Good focus with some requirements addressed in less detail
+   - 60-69: Acceptable focus but missing or superficially covering some requirements
+   - Below 60: Poor focus with major requirements missing or misunderstood
+
+3. Completeness (0-100): Does the output include all necessary information or components as required by the task?
+   - 90-100: Exceptionally thorough coverage of all required sections with appropriate depth
+   - 80-89: Very good coverage with most sections thoroughly covered
+   - 70-79: Good coverage with some sections having less detail
+   - 60-69: Acceptable coverage but with several sections thin or missing
+   - Below 60: Poor coverage with major sections missing or severely underdeveloped
+
+4. Clarity (0-100): How clear, concise, and well-structured is the output?
+   - 90-100: Exceptionally clear, well-organized with excellent flow and professional presentation
+   - 80-89: Very good clarity with logical structure and good use of formatting
+   - 70-79: Good clarity but with some organizational or presentation issues
+   - 60-69: Acceptable clarity but structure could be improved significantly
+   - Below 60: Poor clarity with confusing organization or presentation issues
+
 5. Consensus: How consistent is this output with the majority of other agent outputs?
 6. Outlier Detection: Identify any claims that contradict the majority or introduce unsupported facts (hallucinations).
 
 Scoring Instructions:
-- For each criterion, assign a score from 1 to 100 (1 = poor, 100 = excellent) for each agent.
+- For each criterion, assign a score from 1 to 100 (1 = poor, 100 = excellent) for each agent, following the rubrics above.
 - Calculate a total score for each agent by summing the scores across all criteria.
 - Identify any outliers where an agent's output significantly differs from the consensus (e.g., mentions technologies not used in the codebase).
+- IMPORTANT: Always compare scores across agents for consistency. Ensure that if two agents perform similarly on a criterion, their scores should be within 5 points of each other.
 
 Additional Task:
 Based on your assessment, suggest a concise revised prompt (max 500 words) that would address the identified issues. Focus on:

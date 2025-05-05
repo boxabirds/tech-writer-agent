@@ -171,7 +171,8 @@ def generate_comparative_assessment(original_prompt, outputs):
         String containing the comparative assessment
     """
     configure(api_key=os.getenv('GEMINI_API_KEY'))
-    model = GenerativeModel('gemini-2.0-flash', generation_config=GenerationConfig(temperature=0.0))
+    #model = GenerativeModel('gemini-2.0-flash', generation_config=GenerationConfig(temperature=0.0))
+    model = GenerativeModel('gemini-2.5-pro-exp-03-25', generation_config=GenerationConfig(temperature=0.0))
     
     # Get a list of agent names for reference
     agent_names = [output.get('readable_name', f"{output['model']} ({output['agent']})") for output in outputs]
