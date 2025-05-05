@@ -39,6 +39,9 @@ node_modules/
 # Output files
 output/
 
+# Log files
+logs/
+
 # IDE files
 .idea/
 .vscode/

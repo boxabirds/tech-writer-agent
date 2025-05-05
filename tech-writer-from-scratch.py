@@ -20,14 +20,21 @@ import abc  # Import the abc module for abstract base classes
 import sys
 
 # Configure logging
+log_dir = Path(__file__).parent / "logs"
+log_dir.mkdir(exist_ok=True)
+log_file = log_dir / f"tech-writer-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
+logger.info(f"Logging to file: {log_file}")
 
-
-# TODO model management is pretty rough and could easily be abstracted better. 
 # Check for API keys
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -558,33 +565,45 @@ class ReActAgent(TechWriterAgent):
         
         for step in range(max_steps):
             logger.info(f"\n--- Step {step + 1} ---")
+            logger.debug(f"Current memory size: {len(self.memory)} messages")
             
             # Call the LLM
-            assistant_message = self.call_llm()
-            
-            # Check the result
-            result_type, result_data = self.check_llm_result(assistant_message)
-            
-            if result_type == "final_answer":
-                self.final_answer = result_data
+            try:
+                assistant_message = self.call_llm()
+                
+                # Check the result
+                result_type, result_data = self.check_llm_result(assistant_message)
+                
+                if result_type == "final_answer":
+                    logger.info("Received final answer from LLM")
+                    self.final_answer = result_data
+                    break
+                elif result_type == "tool_calls":
+                    logger.info(f"Processing {len(result_data)} tool calls")
+                    # Execute each tool call
+                    for tool_call in result_data:
+                        logger.debug(f"Executing tool: {tool_call.function.name} with args: {tool_call.function.arguments}")
+                        # Execute the tool
+                        observation = self.execute_tool(tool_call)
+                        logger.debug(f"Tool result length: {len(observation) if observation else 0} chars")
+                        
+                        # Add the observation to memory
+                        self.memory.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "content": observation
+                        })
+            except Exception as e:
+                logger.error(f"Unexpected error in step {step + 1}: {e}", exc_info=True)
+                self.final_answer = f"Error running code analysis: {e}"
                 break
-            elif result_type == "tool_calls":
-                # Execute each tool call
-                for tool_call in result_data:
-                    # Execute the tool
-                    observation = self.execute_tool(tool_call)
-                    
-                    # Add the observation to memory
-                    self.memory.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_call.function.name,
-                        "content": observation
-                    })
             
             logger.info(f"Memory length: {len(self.memory)} messages")
+            logger.debug(f"Current memory content size: {sum(len(str(msg)) for msg in self.memory)} chars")
         
         if self.final_answer is None:
+            logger.warning(f"Failed to complete analysis within {max_steps} steps")
             self.final_answer = "Failed to complete the analysis within the step limit."
         
         return self.final_answer
@@ -609,6 +628,7 @@ class ReflexionAgent(TechWriterAgent):
         while step_count < max_steps:
             step_count += 1
             logger.info(f"\n--- Step {step_count} ---")
+            logger.debug(f"Current memory size: {len(self.memory)} messages")
             
             # Call the LLM
             try:
@@ -618,13 +638,17 @@ class ReflexionAgent(TechWriterAgent):
                 result_type, result_data = self.check_llm_result(assistant_message)
                 
                 if result_type == "final_answer":
+                    logger.info("Received final answer from LLM")
                     self.final_answer = result_data
                     break
                 elif result_type == "tool_calls":
+                    logger.info(f"Processing {len(result_data)} tool calls")
                     # Execute each tool call and add to memory
                     for tool_call in result_data:
+                        logger.debug(f"Executing tool: {tool_call.function.name} with args: {tool_call.function.arguments}")
                         # Execute the tool
                         observation = self.execute_tool(tool_call)
+                        logger.debug(f"Tool result length: {len(observation) if observation else 0} chars")
                         
                         # Add the observation to memory
                         self.memory.append({
@@ -649,6 +673,7 @@ class ReflexionAgent(TechWriterAgent):
                             original_system_message = self.memory[i].copy()
                             # Update with reflection instruction
                             self.memory[i]["content"] += reflection_instruction
+                            logger.debug("Added reflection instruction to system prompt")
                             break
                     
                     # The next call_llm() will use the updated system prompt with reflection
@@ -659,9 +684,10 @@ class ReflexionAgent(TechWriterAgent):
                         # Schedule restoration for next iteration
                         self.memory_restoration_needed = True
                         self.original_system_message = original_system_message
+                        logger.debug("Scheduled system prompt restoration for next step")
                     
             except Exception as e:
-                logger.error(f"Unexpected error: {e}")
+                logger.error(f"Unexpected error in step {step_count}: {e}", exc_info=True)
                 self.final_answer = f"Error running code analysis: {e}"
                 break
             
@@ -671,12 +697,15 @@ class ReflexionAgent(TechWriterAgent):
                 for i, message in enumerate(self.memory):
                     if message.get("role") == "system":
                         self.memory[i] = self.original_system_message
+                        logger.debug("Restored original system prompt")
                         break
                 self.memory_restoration_needed = False
             
             logger.info(f"Memory length: {len(self.memory)} messages")
+            logger.debug(f"Current memory content size: {sum(len(str(msg)) for msg in self.memory)} chars")
         
         if self.final_answer is None:
+            logger.warning(f"Failed to complete analysis within {max_steps} steps")
             self.final_answer = "Failed to complete the analysis within the step limit."
         
         return self.final_answer

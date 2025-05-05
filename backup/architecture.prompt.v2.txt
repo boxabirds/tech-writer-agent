@@ -1,0 +1,49 @@
+10. **Technology Stack**
+    *   List the key technologies, frameworks, and libraries *identified* in package managers (e.g., `package.json`, `pom.xml`) or code imports.
+    *   Note any significant version constraints or compatibility issues *mentioned* in configurations.
+    *   Identify any clearly deprecated or outdated dependencies *based on package information*.
+
+## Mermaid Diagram Requirements
+For ALL models:
+1. Basic rules:
+   - Use square brackets `[]` for node names
+   - Keep names simple (no spaces/special chars)
+   - Use `-->` for arrows
+   - Validate at: https://mermaid.live
+
+For smaller models (nano/mini):
+1. STRICT limitations:
+   - Max 10 nodes per diagram
+   - Only these diagram types:
+     - Simple flowcharts (`graph TD`/`graph LR`)
+     - Basic class diagrams (`classDiagram`)
+   - NEVER use:
+     - Subgraphs
+     - Sequence diagrams
+     - Complex styling
+
+Example valid diagrams:
+```mermaid
+graph TD
+    Core[Core] --> Adapter[Adapter]
+    Adapter --> HTTP[HTTP]
+```
+
+```mermaid  
+classDiagram
+    class Axios {
+        +request()
+    }
+    Axios --> Adapter
+```
+
+Validation steps:
+1. Check model size first
+2. Verify against allowed diagram types
+3. Count nodes (<=10 for nano/mini)
+4. Check for banned syntax elements
+
+## Output Format Guidelines
+
+-   Begin with an executive summary (max 3 paragraphs) summarizing key findings.
+-   Use Mermaid diagrams (at least 3 relevant diagrams based on findings) to visualize architecture.
