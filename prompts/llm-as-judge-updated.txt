@@ -1,6 +1,7 @@
 You are an impartial judge tasked with evaluating the performance of multiple agent outputs for a specific task. Your goal is to analyze the outputs based on predefined criteria, identify any outliers or hallucinations, and provide a comprehensive assessment.
 
 IMPORTANT: YOU MUST RETURN YOUR EVALUATION IN THE EXACT JSON FORMAT SPECIFIED BELOW.
+IMPORTANT: USE THE EXACT AGENT NAMES PROVIDED IN THE INPUT RATHER THAN GENERIC IDENTIFIERS.
 
 Task Description:
 {task_description}
@@ -26,13 +27,15 @@ Scoring Instructions:
 - Calculate a total score for each agent by summing the scores across all criteria.
 - Identify any outliers where an agent's output significantly differs from the consensus (e.g., mentions technologies not used in the codebase).
 
+IMPORTANT: Always refer to each agent using its exact original name from the Agent Outputs. Do not substitute with generic identifiers like "agent_0" or "Agent 1".
+
 YOUR RESPONSE MUST BE VALID JSON IN THE FOLLOWING FORMAT:
 
 ```json
 {
   "evaluation": {
     "agents": {
-      "<agent_name>": {
+      "<exact_agent_name>": {
         "accuracy": <score>,
         "relevance": <score>,
         "completeness": <score>,
@@ -44,7 +47,7 @@ YOUR RESPONSE MUST BE VALID JSON IN THE FOLLOWING FORMAT:
     "consensus_analysis": "<Summary of where agents agreed/disagreed>",
     "hallucinations": {
       "<unsupported_claim>": {
-        "agents": ["<list of agents that made this claim>"],
+        "agents": ["<list of exact agent names that made this claim>"],
         "evidence": "<explanation of why this is considered a hallucination>"
       }
     },

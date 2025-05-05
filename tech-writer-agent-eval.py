@@ -67,7 +67,8 @@ def evaluate_outputs(eval_prompt, original_prompt, output_files, original_prompt
         readable_name = generate_readable_agent_name(filename)
         model_name, agent_type = extract_metadata(filename)
         
-        agent_outputs[f"agent_{i}"] = {
+        # Use readable_name as the key instead of agent_i
+        agent_outputs[readable_name] = {
             "name": readable_name,
             "output": content,
             "model": model_name,
