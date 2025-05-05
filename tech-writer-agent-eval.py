@@ -52,7 +52,7 @@ Your response should only contain the name, nothing else."""
 def evaluate_outputs(eval_prompt, original_prompt, output_files, original_prompt_file=None):
     """Evaluate multiple output files against the original prompt using the LLM-as-judge."""
     configure(api_key=os.getenv('GEMINI_API_KEY'))
-    model = GenerativeModel('gemini-2.0-flash', generation_config=GenerationConfig(temperature=0.0))
+    model = GenerativeModel('gemini-2.5-pro-exp-03-25', generation_config=GenerationConfig(temperature=0.0))
     
     # Prepare agent outputs for the prompt
     agent_outputs = {}
